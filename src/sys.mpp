@@ -1,0 +1,113 @@
+export module sys;
+
+import std;
+
+namespace sys {
+class SysBase {};
+
+template <typename F, typename Tin>
+concept Transform = std::invocable<F, Tin> and (not std::derived_from<std::remove_cvref_t<F>, SysBase>);
+}
+
+export namespace sys {
+template<typename Tin, typename Tout>
+class BasicSys : public SysBase {
+public:
+    static_assert(std::same_as<Tin, std::remove_cvref_t<Tin>>);
+    static_assert(std::same_as<Tout, std::remove_cvref_t<Tout>>);
+    using in_type = Tin;
+    using out_type = Tout;
+    
+private:
+    using in_type_as_arg = std::conditional_t<(sizeof(Tin) > sizeof(std::size_t)), Tin&, Tin>;
+    using out_type_as_arg = std::conditional_t<(sizeof(Tout) > sizeof(std::size_t)), Tout&, Tout>;
+    std::function<Tout(in_type_as_arg)> transform_;
+
+public:
+    template<typename F>
+        requires Transform<F, in_type_as_arg>
+    BasicSys(F&& func) :
+        transform_ { std::forward<F>(func) } {}
+
+    BasicSys(const BasicSys&) = delete;
+    BasicSys& operator=(const BasicSys&) = delete;
+    BasicSys(BasicSys&& other) noexcept = default;
+    BasicSys& operator=(BasicSys&& other) noexcept = default;
+    ~BasicSys() = default;
+
+    Tout operator()(const in_type_as_arg in) {
+        return transform_(in);
+    }
+
+    template <typename F>
+        requires Transform<F, out_type_as_arg>
+    auto operator>>(this auto&& self, F&& func)
+        -> BasicSys<Tin, std::invoke_result_t<F, Tout>> {
+        return [
+        trans1 = std::forward_like<decltype(self)>(self.transform_), 
+        trans2 = std::forward<F>(func)]
+        (const in_type_as_arg in) mutable {
+            return trans2(trans1(in));
+        };
+    }
+    template <typename SysNext>
+        requires std::same_as<std::remove_cvref_t<SysNext>, 
+                              BasicSys<Tout, typename std::remove_cvref_t<SysNext>::out_type>>
+    auto operator>>(this auto&& self, SysNext&& sys_next) 
+        -> BasicSys<Tin, typename std::remove_cvref_t<SysNext>::out_type> {
+        return [
+        trans1 = std::forward_like<decltype(self)>(self.transform_), 
+        trans2 = std::forward_like<SysNext>(sys_next.transform_)]
+        (const in_type_as_arg in) mutable {
+            return trans2(trans1(in));
+        };
+    }
+};
+}
+
+namespace sys {
+template <typename Tin>
+class StartHelper {
+public:
+    template<typename F>
+        requires Transform<F, Tin>
+    auto operator>>(F&& func) const -> BasicSys<Tin, std::invoke_result_t<F, Tin>> {
+        return std::forward<F>(func);
+    }
+};
+}
+
+export namespace sys {
+template <typename Tin>
+class Input {
+private:
+    static_assert(std::same_as<Tin, std::remove_cvref_t<Tin>>);
+    using in_type_as_arg = std::conditional_t<(sizeof(Tin) > sizeof(std::size_t)), Tin&, Tin>;
+    const in_type_as_arg in_;
+
+public:
+    Input() = delete;
+    Input(const in_type_as_arg in) : in_ { in } {}
+    Input(const Input&) = delete;
+    Input& operator=(const Input&) = delete;
+    Input(Input&&) = delete;
+    Input& operator=(Input&&) = delete;
+    ~Input() = default;
+
+    template<typename Tout>
+    // TODO const?
+    auto operator>>(BasicSys<Tin, Tout>& sys) -> Input<Tout> {
+        return sys(in_);
+    }
+    Tin& operator>>(Tin& out) {
+        out = in_;
+        return out;
+    }
+};
+template <typename Tin>
+Input(const Tin) -> Input<Tin>;
+
+using Sys = BasicSys<float, float>;
+template <typename Tin> constexpr StartHelper<Tin> StartT;
+constexpr auto& Start = StartT<float>;
+}
