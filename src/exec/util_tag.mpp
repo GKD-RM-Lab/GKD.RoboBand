@@ -1,4 +1,4 @@
-export module exec:tag;
+export module exec:util.tag;
 
 import std;
 

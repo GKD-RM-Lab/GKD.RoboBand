@@ -1,40 +1,48 @@
 export module exec;
 
 import std;
-export import :tag;
 export import :util;
+export import :util.tag;
+export import :util.typelist; 
 
 export namespace exec {
 ///////////////////////////////////////////
 // just(T) sender factory
 ///////////////////////////////////////////
+// TODO Vs -> Ts
 namespace detail {
 template <typename... Vs>
 struct just_sender {
+    template<template<typename...> class Tuple, template<typename...> class Variant>
+    using value_types = Variant<Tuple<Vs...>>;
+    template<template<typename...> class Variant>
+    using error_types = Variant<std::exception_ptr>;
+    static const constexpr bool sends_done = false;
+
     [[no_unique_address]] std::tuple<Vs...> values_;
 
-    template <typename R>
+    template <receiver R>
     struct operation : public immoveable {
         [[no_unique_address]] std::tuple<Vs...> values_;
         [[no_unique_address]] R rcvr_;
 
-        friend void tag_invoke(start_tag, operation& op) noexcept {
+        friend void tag_invoke(start_tag, operation& op_self) noexcept {
             try {
                 std::apply(
-                    [&op](Vs&... values) {
-                        exec::set_value(std::move(op.rcvr_), std::move(values)...);
+                    [&op_self](Vs&... values) {
+                        exec::set_value(std::move(op_self.rcvr_), std::move(values)...);
                     },
-                    op.values_);
+                    op_self.values_);
             } catch (...) {
-                exec::set_error(std::move(op.rcvr_), std::current_exception());
+                exec::set_error(std::move(op_self.rcvr_), std::current_exception());
             }
         }
     };
 
     template <typename Self, receiver R>
         requires std::same_as<std::remove_cvref_t<Self>, just_sender>
-    friend auto tag_invoke(connect_tag, Self&& sndr, R&& rcvr) -> operation<std::remove_cvref_t<R>> {
-        return { {}, std::forward<Self>(sndr).values_, std::forward<R>(rcvr) };
+    friend auto tag_invoke(connect_tag, Self&& sndr_self, R&& rcvr) -> operation<std::remove_cvref_t<R>> {
+        return { {}, std::forward<Self>(sndr_self).values_, std::forward<R>(rcvr) };
     }
 };
 } // namespace detail
@@ -47,13 +55,75 @@ auto just(Vs&&... values) -> detail::just_sender<std::remove_cvref_t<Vs>...> {
 ///////////////////////////////////////////
 // then(Sender, Function) sender adaptor
 ///////////////////////////////////////////
-/** then_receiver */
+namespace detail {
+template <receiver R, typename F>
+struct then_receiver {
+    [[no_unique_address]] R rcvr_out_;
+    [[no_unique_address]] F func_;
 
-/** then_operation & start */
+    template <typename... Vs>
+        requires std::is_invocable_v<F, Vs...>
+    friend void tag_invoke(set_value_tag, then_receiver&& rcvr_self, Vs&&... vs) 
+        noexcept(std::is_nothrow_invocable_v<F, Vs...>) {
+        try {
+            if constexpr (std::same_as<void, std::invoke_result_t<F, Vs...>>) {
+                static_assert(receiver_of<R>);
+                std::invoke(std::move(rcvr_self.func_), std::forward<Vs>(vs)...);
+                set_value(std::move(rcvr_self.rcvr_out_));
+            } else {
+                static_assert(receiver_of<R, std::invoke_result_t<F, Vs...>>);
+                set_value(std::move(rcvr_self.rcvr_out_), std::invoke(std::move(rcvr_self.func_), std::forward<Vs>(vs)...));
+            }
+        } catch (...) {
+            set_error(std::move(rcvr_self.rcvr_out_), std::current_exception());
+        }
+    }
+    template <typename E>
+    friend void tag_invoke(set_error_tag, then_receiver&& rcvr_self, E&& e) noexcept {
+        set_error(std::move(rcvr_self.rcvr_out_), std::forward<E>(e));
+    }
+    friend void tag_invoke(set_done_tag, then_receiver&& rcvr_self) noexcept {
+        set_done(std::move(rcvr_self.rcvr_out_));
+    }
+};
 
-/** then_sender & connect */
+template <sender S, typename F>
+struct then_sender {
+    template <typename... Args>
+    using result_t_tl = type_list<filter_void_t<std::invoke_result_t<F, Args...>>>;
+    template<template<typename...> class Tuple, template<typename...> class Variant>
+    using value_types = zip_apply<
+        typename sender_traits<S>::template value_types<result_t_tl, type_set_of_tl_tl>, 
+        Tuple, 
+        Variant>;
 
-/** then */
+    template<template<typename...> class Variant>
+    using error_types = type_set_of_tl_tl<
+        typename sender_traits<S>::template error_types<type_list>,
+        type_list<std::exception_ptr>
+     >::template apply<Variant>;
+    static const constexpr bool sends_done = sender_traits<S>::sends_done;
 
+    [[no_unique_address]] S sndr_in_;
+    [[no_unique_address]] F func_;
+
+    template <typename Self, receiver R>
+        requires std::same_as<std::remove_cvref_t<Self>, then_sender>
+    friend auto tag_invoke(connect_tag, Self&& sndr_self, R&& rcvr) 
+        -> connect_result_t<S, then_receiver<std::remove_cvref_t<R>, std::decay_t<F>>> {
+        return { connect(
+            std::forward<Self>(sndr_self).sndr_in_, 
+            then_receiver{
+                std::forward<R>(rcvr),
+                std::forward<Self>(sndr_self).func_
+            }) };
+    }
+};
 }
 
+// TODO operator| scheduler (then_closure_t)
+template <sender S, typename F>
+auto then(S&& sndr, F&& func) -> detail::then_sender<std::remove_cvref_t<S>, std::decay_t<F>> {
+    return { std::forward<S>(sndr), std::forward<F>(func) };
+}
+} // namespace exec

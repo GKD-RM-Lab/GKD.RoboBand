@@ -18,8 +18,7 @@ struct my_receiver {
 };
 
 int main() {
-    exec::sender auto s = exec::just(42, 3.14f);
-    // auto s = exec::then(exec::then(exec::just(42), [](auto val) { return val + 1; }), [](auto val) { return val + 1; });
+    auto s = exec::then(exec::then(exec::just(42), [](auto val) { return val + 1; }), [](auto val) { return val + 1; });
     auto op = exec::connect(s, my_receiver{});
     exec::start(op);
 }
