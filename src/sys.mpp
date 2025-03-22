@@ -86,7 +86,6 @@ private:
     const in_type_as_arg in_;
 
 public:
-    Input() = delete;
     Input(const in_type_as_arg in) : in_ { in } {}
     Input(const Input&) = delete;
     Input& operator=(const Input&) = delete;

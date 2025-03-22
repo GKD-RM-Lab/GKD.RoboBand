@@ -38,7 +38,7 @@ end
 
 target("src")
     set_kind("static")
-    add_files("src/*.mpp", { public = true })
+    add_files("src/**.mpp", { public = true })
     set_languages("cxx26")
     set_policy("build.c++.modules", true)
 

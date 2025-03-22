@@ -1,0 +1,41 @@
+export module exec:util;
+
+import std;
+import :tag;
+
+export namespace exec {
+namespace detail {
+struct immoveable {
+    immoveable() = default;
+    immoveable(immoveable&&) = delete;
+};
+} // namespace detail
+
+template <typename S, typename R>
+using connect_result_t = decltype(std::declval<S>(), std::declval<R>());
+
+template <class R, class E = std::exception_ptr>
+concept receiver =
+    std::move_constructible<std::remove_cvref_t<R>> &&
+    std::constructible_from<std::remove_cvref_t<R>, R> &&
+    requires(std::remove_cvref_t<R>&& t, E&& e) {
+        { exec::set_done(std::move(t)) } noexcept;
+        { exec::set_error(std::move(t), (E&&) e) } noexcept;
+    };
+
+template <class R, class... An>
+concept receiver_of = receiver<R> && 
+    requires(std::remove_cvref_t<R>&& t, An&&... an) {
+        exec::set_value(std::move(t), (An&&)an...);
+    };
+
+template <typename S>
+concept sender = true;
+
+template <typename S, typename E>
+concept sender_in = true;
+
+template <typename S, typename R>
+concept sender_to = true;
+
+}
