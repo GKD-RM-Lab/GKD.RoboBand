@@ -2,8 +2,8 @@ import std;
 import exec;
 
 struct my_receiver {
-    template <typename... Vs>
-    friend void tag_invoke(exec::set_value_tag, my_receiver&&, Vs&&... values) noexcept {
+    template <typename... Ts>
+    friend void tag_invoke(exec::set_value_tag, my_receiver&&, Ts&&... values) noexcept {
         std::println("my_receiver set value in thread {}", std::this_thread::get_id());
         ((std::cout << values << " "), ...);
         std::println();
@@ -18,7 +18,12 @@ struct my_receiver {
 };
 
 int main() {
-    auto s = exec::then(exec::then(exec::just(42), [](auto val) { return val + 1; }), [](auto val) { return val + 1; });
+    // exec::sender auto s = exec::just(114, 514);
+    // exec::sender auto s = exec::then(exec::just(114, 514), [](auto val1, auto val2) { return val1 * val2; });
+    exec::sender auto s = exec::just(114, 514)
+      | exec::then([](auto val1, auto val2) { return val1 * val2; })
+      | exec::then([](auto val) { return val + 1919810; });
     auto op = exec::connect(s, my_receiver{});
     exec::start(op);
 }
+

@@ -1,4 +1,4 @@
-export module exec:util.typelist;
+export module exec:support.typelist;
 
 import std;
 

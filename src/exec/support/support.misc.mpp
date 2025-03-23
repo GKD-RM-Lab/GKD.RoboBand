@@ -1,0 +1,26 @@
+export module exec:support.misc;
+
+import std;
+import :support.tag;
+
+export namespace exec {
+namespace detail {
+struct immoveable {
+    immoveable() = default;
+    immoveable(immoveable&&) = delete;
+};
+} // namespace detail
+
+template <typename S, typename R>
+using connect_result_t = decltype(connect(std::declval<S>(), std::declval<R>()));
+
+template <typename S>
+struct sender_traits {
+    template <template <typename...> typename Tuple, template <typename...> typename Variant>
+    using value_types = typename S::template value_types<Tuple, Variant>;
+    template <template <typename...> typename Variant>
+    using error_types = typename S::template error_types<Variant>;
+    static constexpr bool sends_done = S::sends_done;
+};
+} // namespace exec
+

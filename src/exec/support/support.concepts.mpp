@@ -1,19 +1,9 @@
-export module exec:util;
+export module exec:support.concepts;
 
 import std;
-import :util.tag;
+import :support.tag;
 
 export namespace exec {
-namespace detail {
-struct immoveable {
-    immoveable() = default;
-    immoveable(immoveable&&) = delete;
-};
-} // namespace detail
-
-template <typename S, typename R>
-using connect_result_t = decltype(connect(std::declval<S>(), std::declval<R>()));
-
 template <typename R, typename E = std::exception_ptr>
 concept receiver =
     std::move_constructible<std::remove_cvref_t<R>> &&
@@ -30,16 +20,9 @@ concept receiver_of = receiver<R> &&
     };
 
 template <typename S>
-struct sender_traits {
-    template <template <typename...> typename Tuple, template <typename...> typename Variant>
-    using value_types = typename S::template value_types<Tuple, Variant>;
-    template <template <typename...> typename Variant>
-    using error_types = typename S::template error_types<Variant>;
-    static constexpr bool sends_done = S::sends_done;
-};
-
-template <typename S>
-concept sender = std::move_constructible<std::remove_cvref_t<S>> &&
+concept sender = 
+    std::move_constructible<std::remove_cvref_t<S>> &&
+    std::constructible_from<std::remove_cvref_t<S>, S> &&
     std::same_as<decltype(std::remove_cvref_t<S>::sends_done), const bool> &&
     requires {
         typename std::remove_cvref_t<S>::template value_types<std::tuple, std::variant>;
@@ -55,6 +38,4 @@ concept sender_to = sender<S> && receiver<R> &&
     requires(S&& sndr, R&& rcvr) {
         connect(std::forward<S>(sndr), std::forward<R>(rcvr));
     };
-
 } // namespace exec
-

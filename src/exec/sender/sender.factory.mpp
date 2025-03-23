@@ -1,0 +1,55 @@
+export module exec:sender.factory;
+
+import std;
+import :support.misc;
+import :support.tag;
+import :support.concepts;
+import :support.typelist; 
+
+export namespace exec {
+///////////////////////////////////////////
+// exec::just(vs...) -> sender
+///////////////////////////////////////////
+namespace detail {
+template <typename... Ts>
+struct just_sender {
+    template<template<typename...> class Tuple, template<typename...> class Variant>
+    using value_types = Variant<Tuple<Ts...>>;
+    template<template<typename...> class Variant>
+    using error_types = Variant<std::exception_ptr>;
+    static const constexpr bool sends_done = false;
+
+    [[no_unique_address]] std::tuple<Ts...> values_;
+
+    template <receiver R>
+    struct operation : public immoveable {
+        [[no_unique_address]] std::tuple<Ts...> values_;
+        [[no_unique_address]] R rcvr_;
+
+        friend void tag_invoke(start_tag, operation& op_self) noexcept {
+            try {
+                std::apply(
+                    [&op_self](Ts&... values) {
+                        exec::set_value(std::move(op_self.rcvr_), std::move(values)...);
+                    },
+                    op_self.values_);
+            } catch (...) {
+                exec::set_error(std::move(op_self.rcvr_), std::current_exception());
+            }
+        }
+    };
+
+    template <typename Self, receiver R>
+        requires std::same_as<std::remove_cvref_t<Self>, just_sender>
+    friend auto tag_invoke(connect_tag, Self&& sndr_self, R&& rcvr) -> operation<std::remove_cvref_t<R>> {
+        return { {}, std::forward<Self>(sndr_self).values_, std::forward<R>(rcvr) };
+    }
+};
+} // namespace detail
+
+template <typename... Ts>
+auto just(Ts&&... values) -> detail::just_sender<std::remove_cvref_t<Ts>...> {
+    return { std::tuple{std::forward<Ts>(values)...} };
+}
+} // namespace exec
+

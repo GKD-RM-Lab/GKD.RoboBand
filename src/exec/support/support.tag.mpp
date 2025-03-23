@@ -1,4 +1,4 @@
-export module exec:util.tag;
+export module exec:support.tag;
 
 import std;
 
@@ -14,7 +14,7 @@ namespace detail {
     };
 
 template <typename Tag, typename... Args>
-concept tag_invocable = std::is_invocable_v<tag_invoke_test, Tag, Args...>;
+concept tag_invocable = std::invocable<tag_invoke_test, Tag, Args...>;
 template <typename Tag, typename... Args>
 concept nothrow_tag_invocable = std::is_nothrow_invocable_v<tag_invoke_test, Tag, Args...>;
 template <typename Tag, typename... Args>
@@ -43,11 +43,11 @@ struct set_error_tag {
 constexpr set_error_tag set_error {};
 
 struct set_value_tag {
-    template <typename R, typename... Vs>
-        requires detail::tag_invocable<set_value_tag, R, Vs...>
-    auto operator()(R&& r, Vs&&... vs) const noexcept(detail::nothrow_tag_invocable<set_value_tag, R, Vs...>)
-        -> detail::tag_invoke_result_t<set_value_tag, R, Vs...> {
-        return tag_invoke(set_value_tag {}, static_cast<R&&>(r), static_cast<Vs&&>(vs)...);
+    template <typename R, typename... Ts>
+        requires detail::tag_invocable<set_value_tag, R, Ts...>
+    auto operator()(R&& r, Ts&&... vs) const noexcept(detail::nothrow_tag_invocable<set_value_tag, R, Ts...>)
+        -> detail::tag_invoke_result_t<set_value_tag, R, Ts...> {
+        return tag_invoke(set_value_tag {}, static_cast<R&&>(r), static_cast<Ts&&>(vs)...);
     }
 };
 constexpr set_value_tag set_value {};
@@ -60,7 +60,7 @@ struct connect_tag {
         return tag_invoke(connect_tag {}, static_cast<S&&>(s), static_cast<R&&>(r));
     }
 };
-constexpr connect_tag connect;
+constexpr connect_tag connect {};
 
 struct start_tag {
     template <typename O>
