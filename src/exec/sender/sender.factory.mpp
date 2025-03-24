@@ -22,7 +22,7 @@ struct just_sender {
     [[no_unique_address]] std::tuple<Ts...> values_;
 
     template <receiver R>
-    struct operation : public immoveable {
+    struct operation : public immovable {
         [[no_unique_address]] std::tuple<Ts...> values_;
         [[no_unique_address]] R rcvr_;
 

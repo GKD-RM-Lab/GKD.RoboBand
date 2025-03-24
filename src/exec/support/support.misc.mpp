@@ -5,9 +5,9 @@ import :support.tag;
 
 export namespace exec {
 namespace detail {
-struct immoveable {
-    immoveable() = default;
-    immoveable(immoveable&&) = delete;
+struct immovable {
+    immovable() = default;
+    immovable(immovable&&) = delete;
 };
 } // namespace detail
 

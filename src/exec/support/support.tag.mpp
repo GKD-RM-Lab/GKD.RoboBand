@@ -27,7 +27,8 @@ using tag_t = std::remove_cvref_t<decltype(Tag)>;
 struct set_done_tag {
     template <typename R>
         requires detail::nothrow_tag_invocable<set_done_tag, R>
-    auto operator()(R&& r) const noexcept -> detail::tag_invoke_result_t<set_done_tag, R> {
+    auto operator()(R&& r) const noexcept
+        -> detail::tag_invoke_result_t<set_done_tag, R> {
         return tag_invoke(set_done_tag {}, static_cast<R&&>(r));
     }
 };
@@ -36,7 +37,8 @@ constexpr set_done_tag set_done {};
 struct set_error_tag {
     template <typename R, typename E>
         requires detail::nothrow_tag_invocable<set_error_tag, R, E>
-    auto operator()(R&& r, E&& e) const noexcept -> detail::tag_invoke_result_t<set_error_tag, R, E> {
+    auto operator()(R&& r, E&& e) const noexcept 
+        -> detail::tag_invoke_result_t<set_error_tag, R, E> {
         return tag_invoke(set_error_tag {}, static_cast<R&&>(r), static_cast<E&&>(e));
     }
 };
@@ -65,9 +67,21 @@ constexpr connect_tag connect {};
 struct start_tag {
     template <typename O>
         requires detail::nothrow_tag_invocable<start_tag, O>
-    auto operator()(O&& op) const noexcept -> detail::tag_invoke_result_t<start_tag, O> {
+    auto operator()(O&& op) const noexcept 
+        -> detail::tag_invoke_result_t<start_tag, O> {
         return tag_invoke(start_tag {}, static_cast<O&&>(op));
     }
 };
 constexpr start_tag start {};
+
+struct schedule_tag {
+    template <typename S>
+        requires detail::nothrow_tag_invocable<schedule_tag, S>
+    auto operator()(S&& sched) const noexcept 
+        -> detail::tag_invoke_result_t<schedule_tag, S> {
+        return tag_invoke(schedule_tag {}, static_cast<S&&>(sched));
+    }
+};
+constexpr schedule_tag schedule {};
 } // namespace exec
+

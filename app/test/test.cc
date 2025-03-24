@@ -18,11 +18,11 @@ struct my_receiver {
 };
 
 int main() {
-    // exec::sender auto s = exec::just(114, 514);
-    // exec::sender auto s = exec::then(exec::just(114, 514), [](auto val1, auto val2) { return val1 * val2; });
-    exec::sender auto s = exec::just(114, 514)
-      | exec::then([](auto val1, auto val2) { return val1 * val2; })
-      | exec::then([](auto val) { return val + 1919810; });
+    auto context = exec::thread_context{};
+    exec::scheduler auto sched = context.get_scheduler();
+    exec::sender auto s = exec::schedule(sched)
+      | exec::then([]() static { std::println("Hello World"); });
+
     auto op = exec::connect(s, my_receiver{});
     exec::start(op);
 }

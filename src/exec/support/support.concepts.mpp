@@ -6,36 +6,48 @@ import :support.tag;
 export namespace exec {
 template <typename R, typename E = std::exception_ptr>
 concept receiver =
-    std::move_constructible<std::remove_cvref_t<R>> &&
-    std::constructible_from<std::remove_cvref_t<R>, R> &&
+    std::move_constructible<std::remove_cvref_t<R>> and
+    std::constructible_from<std::remove_cvref_t<R>, R> and
     requires(std::remove_cvref_t<R>&& t, E&& e) {
         { exec::set_done(std::move(t)) } noexcept;
         { exec::set_error(std::move(t), (E&&) e) } noexcept;
     };
 
 template <typename R, typename... An>
-concept receiver_of = receiver<R> && 
+concept receiver_of = 
+    receiver<R> and
     requires(std::remove_cvref_t<R>&& t, An&&... an) {
         exec::set_value(std::move(t), (An&&)an...);
     };
 
 template <typename S>
 concept sender = 
-    std::move_constructible<std::remove_cvref_t<S>> &&
-    std::constructible_from<std::remove_cvref_t<S>, S> &&
-    std::same_as<decltype(std::remove_cvref_t<S>::sends_done), const bool> &&
+    std::move_constructible<std::remove_cvref_t<S>> and
+    std::constructible_from<std::remove_cvref_t<S>, S> and
+    std::same_as<decltype(std::remove_cvref_t<S>::sends_done), const bool> and
     requires {
         typename std::remove_cvref_t<S>::template value_types<std::tuple, std::variant>;
         typename std::remove_cvref_t<S>::template error_types<std::variant>;
     };
 
-// TODO
-template <typename S, typename E>
-concept sender_in = true;
-
 template <typename S, typename R>
-concept sender_to = sender<S> && receiver<R> &&
+concept sender_to = 
+    sender<S> and
+    receiver<R> and
     requires(S&& sndr, R&& rcvr) {
         connect(std::forward<S>(sndr), std::forward<R>(rcvr));
     };
+
+template <typename T>
+concept operation_state = 
+    not std::move_constructible<T> and
+    std::destructible<T> and
+    requires(T& op) { start(op); };
+
+template <typename T>
+concept scheduler = 
+    std::copy_constructible<std::remove_cvref_t<T>> and
+    requires(const T& sched) { schedule(sched); };
+    
 } // namespace exec
+

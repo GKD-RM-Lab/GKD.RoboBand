@@ -1,7 +1,9 @@
 add_rules("plugin.compile_commands.autoupdate", { outputdir = "build" })
 add_rules("mode.debug", "mode.releasedbg", "mode.release")
+
 set_policy("build.warning", true)
 set_warnings("allextra", "pedantic")
+add_cxxflags("-fexperimental-library")
 
 if is_mode("debug") then
     add_cxxflags("-ftrapv")

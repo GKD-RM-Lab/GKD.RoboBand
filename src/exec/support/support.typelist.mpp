@@ -17,7 +17,7 @@ struct type_list {
     template <typename T>
     static constexpr bool has = []() static {
         if constexpr (sizeof...(Ts)) {
-            return (std::is_same_v<T, Ts> || ...);
+            return (std::is_same_v<T, Ts> or ...);
         } else {
             return false;
         }
