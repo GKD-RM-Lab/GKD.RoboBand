@@ -18,12 +18,20 @@ struct my_receiver {
 };
 
 int main() {
-    auto context = exec::thread_context{};
-    exec::scheduler auto sched = context.get_scheduler();
-    exec::sender auto s = exec::schedule(sched)
-      | exec::then([]() static { std::println("Hello World"); });
+    auto context1 = exec::thread_context{};
+    auto context2 = exec::thread_context{};
+    exec::scheduler auto sched1 = context1.get_scheduler();
+    exec::scheduler auto sched2 = context2.get_scheduler();
+    exec::sender auto s = 
+        exec::schedule(sched1)
+      | exec::then([]() static { std::println("Hello Thread: {}", std::this_thread::get_id()); })
+      | exec::schedule_from(sched2)
+      | exec::then([]() static { std::println("Hello Thread: {}", std::this_thread::get_id()); });
 
     exec::operation_state auto op = exec::connect(s, my_receiver{});
     exec::start(op);
+
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(1s);
 }
 

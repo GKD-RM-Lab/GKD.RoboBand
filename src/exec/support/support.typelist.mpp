@@ -95,14 +95,19 @@ template <typename... TLs>
 using type_set_of_tl_tl = type_set_of_tl<TLs...>::type_list;
 
 ///////////////////////////////////////////
-// filter_void
+// filter_void_tl
 ///////////////////////////////////////////
+namespace detail {
 template <typename T>
 struct filter_void {
-    using type = std::conditional_t<std::is_void_v<T>, type_list<>, type_list<T>>;
+    using type_list = std::conditional_t<std::is_void_v<T>, type_list<>, type_list<T>>;
 };
+} // namespace detail
+
+/** filter_void_tl<NonVoid> -> type_list<T>
+ *  filter_void_tl<void>    -> type_list<> */
 template <typename T>
-using filter_void_t = filter_void<T>::type;
+using filter_void_tl = detail::filter_void<T>::type_list;
 
 ///////////////////////////////////////////
 // zip_apply
@@ -124,5 +129,21 @@ template <
 using zip_apply =
     typename TL_TLs::template apply<detail::zip_apply_impl<Inner, Outer>::template apply>;
 
+///////////////////////////////////////////
+// tl_wrapper
+///////////////////////////////////////////
+namespace detail {
+template <template <typename...> typename T>
+struct tl_wrapper_impl {
+    template <typename... Ts>
+    using type_list = type_list<T<Ts...>>;
+};
+} // namespace detail
+
+/** T<...>             -> Result
+ *  tl_wrapper<T<...>> -> type_list<Result> */
+template <template <typename...> typename T>
+using tl_wrapper = detail::tl_wrapper_impl<T>::type_list;
 } // namespace exec
+
 

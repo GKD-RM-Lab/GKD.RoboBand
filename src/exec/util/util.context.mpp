@@ -55,7 +55,7 @@ struct run_loop : detail::immovable {
         template <template <typename...> class Variant>
         using error_types = Variant<std::exception_ptr>;
         // TODO
-        static const constexpr bool sends_done = true;
+        static const constexpr bool sends_done { true };
 
         run_loop& loop_;
 
@@ -85,7 +85,7 @@ struct run_loop : detail::immovable {
             }
         };
 
-        template <receiver R>
+        template <exec::receiver R>
         auto connect(const sender&, R&& rcvr) const noexcept
             -> operation<std::remove_cvref_t<R>> {
             return { std::forward<R>(rcvr), loop_ };

@@ -2,6 +2,7 @@ export module exec:support.misc;
 
 import std;
 import :support.core;
+import :support.concepts;
 
 export namespace exec {
 namespace detail {
@@ -11,13 +12,9 @@ struct immovable {
 };
 } // namespace detail
 
-template <typename S>
-struct sender_traits {
-    template <template <typename...> typename Tuple, template <typename...> typename Variant>
-    using value_types = typename S::template value_types<Tuple, Variant>;
-    template <template <typename...> typename Variant>
-    using error_types = typename S::template error_types<Variant>;
-    static constexpr bool sends_done = S::sends_done;
-};
+template <exec::sender S, exec::receiver R>
+using connect_result_t = decltype(exec::connect(std::declval<S>(), std::declval<R>()));
+template <exec::scheduler Sch>
+using schedule_result_t = decltype(exec::schedule(std::declval<Sch>()));
 } // namespace exec
 

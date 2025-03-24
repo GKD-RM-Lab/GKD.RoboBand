@@ -17,11 +17,11 @@ struct just_sender {
     using value_types = Variant<Tuple<Ts...>>;
     template<template<typename...> class Variant>
     using error_types = Variant<std::exception_ptr>;
-    static const constexpr bool sends_done = false;
+    static const constexpr bool sends_done { false };
 
     [[no_unique_address]] std::tuple<Ts...> values_;
 
-    template <receiver R>
+    template <exec::receiver R>
     struct operation : public immovable {
         [[no_unique_address]] std::tuple<Ts...> values_;
         [[no_unique_address]] R rcvr_;
@@ -39,7 +39,7 @@ struct just_sender {
         }
     };
 
-    template <receiver R>
+    template <exec::receiver R>
     auto connect(this auto&& self, const just_sender&, R&& rcvr) -> operation<std::remove_cvref_t<R>> {
         return { {}, std::forward_like<decltype(self)>(self.values_), std::forward<R>(rcvr) };
     }
