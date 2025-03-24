@@ -2,7 +2,7 @@ export module exec:sender.factory;
 
 import std;
 import :support.misc;
-import :support.tag;
+import :support.core;
 import :support.concepts;
 import :support.typelist; 
 
@@ -26,23 +26,22 @@ struct just_sender {
         [[no_unique_address]] std::tuple<Ts...> values_;
         [[no_unique_address]] R rcvr_;
 
-        friend void tag_invoke(start_tag, operation& op_self) noexcept {
+        void start(operation&) noexcept {
             try {
                 std::apply(
-                    [&op_self](Ts&... values) {
-                        exec::set_value(std::move(op_self.rcvr_), std::move(values)...);
+                    [this](Ts&... values) {
+                        exec::set_value(std::move(rcvr_), std::move(values)...);
                     },
-                    op_self.values_);
+                    values_);
             } catch (...) {
-                exec::set_error(std::move(op_self.rcvr_), std::current_exception());
+                exec::set_error(std::move(rcvr_), std::current_exception());
             }
         }
     };
 
-    template <typename Self, receiver R>
-        requires std::same_as<std::remove_cvref_t<Self>, just_sender>
-    friend auto tag_invoke(connect_tag, Self&& sndr_self, R&& rcvr) -> operation<std::remove_cvref_t<R>> {
-        return { {}, std::forward<Self>(sndr_self).values_, std::forward<R>(rcvr) };
+    template <receiver R>
+    auto connect(this auto&& self, const just_sender&, R&& rcvr) -> operation<std::remove_cvref_t<R>> {
+        return { {}, std::forward_like<decltype(self)>(self.values_), std::forward<R>(rcvr) };
     }
 };
 } // namespace detail

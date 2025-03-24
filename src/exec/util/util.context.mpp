@@ -2,7 +2,6 @@ export module exec:util.context;
 
 import std;
 import :support.misc;
-import :support.tag;
 import :support.concepts;
 import :support.typelist; 
 
@@ -71,32 +70,32 @@ struct run_loop : detail::immovable {
 
             void execute() noexcept override final {
                 try {
-                    set_value(std::move(rcvr_));
+                    exec::set_value(std::move(rcvr_));
                 } catch (...) {
-                    set_error(std::move(rcvr_), std::current_exception());
+                    exec::set_error(std::move(rcvr_), std::current_exception());
                 }
             }
 
-            friend void tag_invoke(start_tag, operation& op_self) noexcept {
+            void start(operation&) noexcept {
                 try {
-                    op_self.loop_.push_back(&op_self);
+                    loop_.push_back(this);
                 } catch (...) {
-                    set_error(std::move(op_self.rcvr_), std::current_exception());
+                    exec::set_error(std::move(rcvr_), std::current_exception());
                 }
             }
         };
 
         template <receiver R>
-        friend auto tag_invoke(connect_tag, const sender& sndr_self, R&& rcvr)
+        auto connect(const sender&, R&& rcvr) const noexcept
             -> operation<std::remove_cvref_t<R>> {
-            return { std::forward<R>(rcvr), sndr_self.loop_ };
+            return { std::forward<R>(rcvr), loop_ };
         }
     };
 
     struct scheduler {
         run_loop& loop_;
-        friend auto tag_invoke(schedule_tag, const scheduler& sched_self) noexcept -> sender {
-            return { sched_self.loop_ };
+        auto schedule(scheduler&) noexcept -> sender {
+            return { loop_ };
         }
     };
 
@@ -106,7 +105,8 @@ struct run_loop : detail::immovable {
 };
 
 ///////////////////////////////////////////
-// thread_context execution context
+// exec::thread_context context {};
+// exec::scheduler auto sched = context.get_scheduler();
 ///////////////////////////////////////////
 class thread_context : run_loop {
     std::jthread th { [this] { run(); } };

@@ -2,7 +2,7 @@ export module exec:sender.adaptor;
 
 import std;
 import :support.misc;
-import :support.tag;
+import :support.core;
 import :support.concepts;
 import :support.typelist;
 
@@ -19,29 +19,32 @@ struct then_receiver {
 
     template <typename... Ts>
         requires std::is_invocable_v<F, Ts...>
-    friend void tag_invoke(set_value_tag, then_receiver&& rcvr_self, Ts&&... vs) 
+    void set_value(then_receiver&&, Ts&&... vs) 
         noexcept(std::is_nothrow_invocable_v<F, Ts...>) {
         try {
             if constexpr (std::same_as<void, std::invoke_result_t<F, Ts...>>) {
                 static_assert(receiver_of<R>);
-                std::invoke(std::move(rcvr_self.func_), std::forward<Ts>(vs)...);
-                set_value(std::move(rcvr_self.rcvr_out_));
+                std::invoke(std::move(func_), std::forward<Ts>(vs)...);
+                exec::set_value(std::move(rcvr_out_));
             } else {
                 static_assert(receiver_of<R, std::invoke_result_t<F, Ts...>>);
-                set_value(std::move(rcvr_self.rcvr_out_), std::invoke(std::move(rcvr_self.func_), std::forward<Ts>(vs)...));
+                exec::set_value(std::move(rcvr_out_), std::invoke(std::move(func_), std::forward<Ts>(vs)...));
             }
         } catch (...) {
-            set_error(std::move(rcvr_self.rcvr_out_), std::current_exception());
+            exec::set_error(std::move(rcvr_out_), std::current_exception());
         }
     }
     template <typename E>
-    friend void tag_invoke(set_error_tag, then_receiver&& rcvr_self, E&& e) noexcept {
-        set_error(std::move(rcvr_self.rcvr_out_), std::forward<E>(e));
+    void set_error(then_receiver&&, E&& e) noexcept {
+        exec::set_error(std::move(rcvr_out_), std::forward<E>(e));
     }
-    friend void tag_invoke(set_done_tag, then_receiver&& rcvr_self) noexcept {
-        set_done(std::move(rcvr_self.rcvr_out_));
+    void set_done(then_receiver&&) noexcept {
+        exec::set_done(std::move(rcvr_out_));
     }
 };
+
+template <receiver R, typename F>
+then_receiver(R rcvr, F func) -> then_receiver<std::remove_cvref_t<R>, std::decay_t<F>>;
 
 template <sender S, typename F>
 struct then_sender {
@@ -63,26 +66,19 @@ struct then_sender {
     [[no_unique_address]] S sndr_in_;
     [[no_unique_address]] F func_;
 
-    // template <typename Self, receiver R>
-    //     requires std::same_as<std::remove_cvref_t<Self>, just_sender>
-    // friend auto tag_invoke(connect_tag, Self&& sndr_self, R&& rcvr) -> operation<std::remove_cvref_t<R>> {
-    //     return { {}, std::forward<Self>(sndr_self).values_, std::forward<R>(rcvr) };
-    // }
     template <typename Self, receiver R>
         requires std::same_as<std::remove_cvref_t<Self>, then_sender>
-    friend auto tag_invoke(connect_tag, Self&& sndr_self, R&& rcvr) 
-        -> connect_result_t<S, then_receiver<std::remove_cvref_t<R>, std::decay_t<F>>> {
-        return { connect(
-            std::forward<Self>(sndr_self).sndr_in_, 
+    auto connect(Self&&, R&& rcvr) {
+        return exec::connect(
+            std::forward_like<Self>(sndr_in_), 
             then_receiver{
                 std::forward<R>(rcvr),
-                std::forward<Self>(sndr_self).func_
-            }) };
+                std::forward_like<Self>(func_)
+            });
     }
 };
 } // namespace detail
 
-// TODO scheduler
 template <sender S, typename F>
 auto then(S&& sndr, F&& func) -> detail::then_sender<std::remove_cvref_t<S>, std::decay_t<F>> {
     return { std::forward<S>(sndr), std::forward<F>(func) };
@@ -105,5 +101,9 @@ template <typename F>
 auto then(F&& func) -> detail::then_closure<std::decay_t<F>> {
     return { std::forward<F>(func) };
 }
+///////////////////////////////////////////
+// schedule_from
+///////////////////////////////////////////
+
 } // namespace exec
 

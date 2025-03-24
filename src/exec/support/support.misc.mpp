@@ -1,7 +1,7 @@
 export module exec:support.misc;
 
 import std;
-import :support.tag;
+import :support.core;
 
 export namespace exec {
 namespace detail {
@@ -10,9 +10,6 @@ struct immovable {
     immovable(immovable&&) = delete;
 };
 } // namespace detail
-
-template <typename S, typename R>
-using connect_result_t = decltype(connect(std::declval<S>(), std::declval<R>()));
 
 template <typename S>
 struct sender_traits {

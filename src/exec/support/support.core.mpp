@@ -1,0 +1,34 @@
+export module exec:support.core;
+
+import std;
+
+export namespace exec {
+template <typename R, typename... Ts>
+auto set_value(R&& rcvr, Ts&&... vs)
+    noexcept(noexcept(rcvr.set_value(std::move(rcvr), std::forward<Ts>(vs)...))) {
+    return rcvr.set_value(std::move(rcvr), std::forward<Ts>(vs)...);
+}
+template <typename R, typename E>
+auto set_error(R&& rcvr, E&& e) noexcept {
+    return rcvr.set_error(std::move(rcvr), std::forward<E>(e));
+}
+template <typename R>
+auto set_done(R&& rcvr) noexcept {
+    return rcvr.set_done(std::move(rcvr));
+}
+
+template <typename S, typename R>
+auto connect(S&& sndr, R&& rcvr)
+    noexcept(noexcept(sndr.connect(std::forward<S>(sndr), std::forward<R>(rcvr)))) {
+    return sndr.connect(std::forward<S>(sndr), std::forward<R>(rcvr));
+}
+template <typename O>
+auto start(O&& op) noexcept {
+    return op.start(std::forward<O>(op));
+}
+
+template <typename S>
+auto schedule(S&& sched) noexcept {
+    return sched.schedule(std::forward<S>(sched));
+}
+}

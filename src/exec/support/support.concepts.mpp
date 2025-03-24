@@ -1,7 +1,7 @@
 export module exec:support.concepts;
 
 import std;
-import :support.tag;
+import :support.core;
 
 export namespace exec {
 template <typename R, typename E = std::exception_ptr>
@@ -35,19 +35,19 @@ concept sender_to =
     sender<S> and
     receiver<R> and
     requires(S&& sndr, R&& rcvr) {
-        connect(std::forward<S>(sndr), std::forward<R>(rcvr));
+        exec::connect(std::forward<S>(sndr), std::forward<R>(rcvr));
     };
 
 template <typename T>
 concept operation_state = 
     not std::move_constructible<T> and
     std::destructible<T> and
-    requires(T& op) { start(op); };
+    requires(T& op) { exec::start(op); };
 
 template <typename T>
 concept scheduler = 
     std::copy_constructible<std::remove_cvref_t<T>> and
-    requires(const T& sched) { schedule(sched); };
+    requires(T& sched) { exec::schedule(sched); };
     
 } // namespace exec
 

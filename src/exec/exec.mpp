@@ -1,7 +1,7 @@
 export module exec;
 
 export import :support.misc;
-export import :support.tag;
+export import :support.core;
 export import :support.concepts;
 export import :support.typelist; 
 
