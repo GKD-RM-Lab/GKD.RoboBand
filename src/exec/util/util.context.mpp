@@ -1,9 +1,7 @@
 export module exec:util.context;
 
 import std;
-import :support.misc;
-import :support.concepts;
-import :support.typelist; 
+import :support;
 
 export namespace exec {
 ///////////////////////////////////////////
@@ -50,6 +48,11 @@ struct run_loop : detail::immovable {
     }
 
     struct sender {
+        static constexpr auto info = [] {
+            using namespace constring_literals;
+            return "run_loop_sender"_cs;
+        }();
+
         template <template <typename...> class Tuple, template <typename...> class Variant>
         using value_types = Variant<Tuple<>>;
         template <template <typename...> class Variant>
@@ -59,8 +62,13 @@ struct run_loop : detail::immovable {
 
         run_loop& loop_;
 
-        template <class R>
+        template <receiver R>
         struct operation : task {
+            static constexpr auto info = [] {
+                using namespace constring_literals;
+                return "run_loop_operation<"_cs + typeinfo<R> + ">"_cs;
+            }();
+
             [[no_unique_address]] R rcvr_;
             run_loop& loop_;
 
@@ -93,6 +101,11 @@ struct run_loop : detail::immovable {
     };
 
     struct scheduler {
+        static constexpr auto info = [] {
+            using namespace constring_literals;
+            return "run_loop_scheduler"_cs;
+        }();
+
         run_loop& loop_;
         auto schedule(scheduler&) noexcept -> sender {
             return { loop_ };

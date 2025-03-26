@@ -1,10 +1,7 @@
 export module exec:sender.adaptor;
 
 import std;
-import :support.misc;
-import :support.core;
-import :support.concepts;
-import :support.typelist;
+import :support;
 
 export namespace exec {
 ///////////////////////////////////////////
@@ -17,6 +14,15 @@ struct then_sender {
     /** receiver *************************/
     template <typename R>
     struct receiver {
+        static constexpr auto info = [] {
+            using namespace constring_literals;
+            return 
+                "then_receiver<"_cs 
+              + S::info + ", "_cs 
+              + typeinfo<F> + ", "_cs 
+              + R::info + ">"_cs;
+        }();
+
         [[no_unique_address]] R rcvr_out_;
         [[no_unique_address]] F func_;
 
@@ -49,6 +55,11 @@ struct then_sender {
     };
 
     /** sender ***************************/
+    static constexpr auto info = [] {
+        using namespace constring_literals;
+        return "then_sender<"_cs + S::info + ", "_cs + typeinfo<F> + ">"_cs;
+    }();
+
     template <typename... Args>
     using result_t_tl = type_list<filter_void_tl<std::invoke_result_t<F, Args...>>>;
     template<template<typename...> class Tuple, template<typename...> class Variant>
@@ -116,6 +127,15 @@ struct schedule_from_sender {
     struct operation : detail::immovable {
         /** receiver *********************/
         struct receiver_before {
+            static constexpr auto info = [] {
+                using namespace constring_literals;
+                return 
+                    "schedule_from_receiver_before<"_cs 
+                  + Sch::info + ", "_cs 
+                  + S::info + ", "_cs 
+                  + R::info + ">"_cs;
+            }();
+
             operation& op_;
 
             template <typename... Ts>
@@ -137,6 +157,11 @@ struct schedule_from_sender {
         };
 
         struct receiver_after {
+            static constexpr auto info = [] {
+                using namespace constring_literals;
+                return "schedule_from_receiver_after<"_cs + Sch::info + ", "_cs + S::info + ", "_cs + R::info + ">"_cs;
+            }();
+
             operation& op_;
 
             template <typename... Ts>
@@ -167,6 +192,15 @@ struct schedule_from_sender {
         };
 
         /** operation ********************/
+        static constexpr auto info = [] {
+            using namespace constring_literals;
+            return 
+                "schedule_from_operation<"_cs
+              + typeinfo<Sch> + ", "_cs
+              + typeinfo<S> + ", "_cs
+              + typeinfo<R> + ">"_cs;
+        }();
+
         using value_t = S::template value_types<std::tuple, std::variant>;
         [[no_unique_address]] value_t value_ {};
         static constexpr bool sends_done { S::sends_done };
@@ -191,6 +225,11 @@ struct schedule_from_sender {
     };
 
     /** sender ***************************/
+    static constexpr auto info = [] {
+        using namespace constring_literals;
+        return "schedule_from_sender<"_cs + Sch::info + ", "_cs + S::info + ">"_cs;
+    }();
+
     template <template <typename...> class Tuple, template <typename...> class Variant>
     using value_types = typename S::template value_types<Tuple, Variant>;
     template <template <typename...> class Variant>

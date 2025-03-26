@@ -2,6 +2,11 @@ import std;
 import exec;
 
 struct my_receiver {
+    static constexpr auto info = [] {
+        using namespace exec::constring_literals;
+        return "my_receiver"_cs;
+    }();
+
     template <typename... Ts>
     void set_value(my_receiver&&, Ts&&... values) noexcept {
         std::println("my_receiver set value in thread {}", std::this_thread::get_id());

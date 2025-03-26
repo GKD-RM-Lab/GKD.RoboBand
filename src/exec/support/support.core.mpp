@@ -1,34 +1,82 @@
 export module exec:support.core;
 
 import std;
+import :support.typeinfo;
 
 export namespace exec {
+enum class info : bool {
+    show = true,
+    hide = false,
+};
+constexpr info info_state_default { info::show };
+
+/** set_value ****************************/
 template <typename R, typename... Ts>
 auto set_value(R&& rcvr, Ts&&... vs)
     noexcept(noexcept(rcvr.set_value(std::move(rcvr), std::forward<Ts>(vs)...))) {
+    if constexpr (info_state_default == info::show) {
+        std::println("${:-^32}$", " set_value ");
+        std::println(" *  receiver : {}", std::remove_cvref_t<R>::info.view());
+        std::println(" -> values   : {}", typeinfo<Ts...>.view());
+        std::println();
+    }
     return rcvr.set_value(std::move(rcvr), std::forward<Ts>(vs)...);
 }
+
+/** set_error ****************************/
 template <typename R, typename E>
-auto set_error(R&& rcvr, E&& e) noexcept {
+auto set_error(R&& rcvr, E&& e, info info_state = info_state_default) noexcept {
+    if (info_state == info::show) {
+        std::println("${:-^32}$", " set_error ");
+        std::println(" *  receiver : {}", std::remove_cvref_t<R>::info.view());
+        std::println();
+    }
     return rcvr.set_error(std::move(rcvr), std::forward<E>(e));
 }
+
+/** set_done *****************************/
 template <typename R>
-auto set_done(R&& rcvr) noexcept {
+auto set_done(R&& rcvr, info info_state = info_state_default) noexcept {
+    if (info_state == info::show) {
+        std::println("${:-^32}$", " set_done ");
+        std::println(" *  receiver : {}", std::remove_cvref_t<R>::info.view());
+        std::println();
+    }
     return rcvr.set_done(std::move(rcvr));
 }
 
+/** connect ******************************/
 template <typename S, typename R>
-auto connect(S&& sndr, R&& rcvr)
+auto connect(S&& sndr, R&& rcvr, info info_state = info_state_default)
     noexcept(noexcept(sndr.connect(std::forward<S>(sndr), std::forward<R>(rcvr)))) {
+    if (info_state == info::show) {
+        std::println("${:-^32}$", " connect ");
+        std::println(" *  sender   : {}", std::remove_cvref_t<S>::info.view());
+        std::println(" -> receiver : {}", std::remove_cvref_t<R>::info.view());
+        std::println();
+    }
     return sndr.connect(std::forward<S>(sndr), std::forward<R>(rcvr));
 }
+
+/** start ********************************/
 template <typename O>
-auto start(O&& op) noexcept {
+auto start(O&& op, info info_state = info_state_default) noexcept {
+    if (info_state == info::show) {
+        std::println("${:-^32}$", " start ");
+        std::println(" *  operation_state : {}", std::remove_cvref_t<O>::info.view());
+        std::println();
+    }
     return op.start(std::forward<O>(op));
 }
 
-template <typename S>
-auto schedule(S&& sched) noexcept {
-    return sched.schedule(std::forward<S>(sched));
+/** schedule *****************************/
+template <typename Sch>
+auto schedule(Sch&& sched, info info_state = info_state_default) noexcept {
+    if (info_state == info::show) {
+        std::println("${:-^32}$", " schedule ");
+        std::println(" *  scheduler : {}", std::remove_cvref_t<Sch>::info.view());
+        std::println();
+    }
+    return sched.schedule(std::forward<Sch>(sched));
 }
 }
