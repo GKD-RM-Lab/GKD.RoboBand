@@ -1,0 +1,128 @@
+export module robo:support.typeinfo;
+
+import std;
+
+export namespace robo {
+namespace spt {
+/** constring ****************************/
+template <std::size_t N>
+struct constring {
+    std::array<char, N> str;
+
+    consteval constring() = default;
+    consteval constring(const std::array<char, N>& arr) {
+        std::copy(arr.cbegin(), arr.cend(), str.begin());
+    }
+    consteval constring(const char (&arr)[N+1]) {
+        std::copy(arr, arr + N, str.begin());
+    }
+    consteval constring(std::string_view s) {
+        if (s.size() != N) throw std::logic_error("constring: size mismatch");
+        for (std::size_t i = 0; i < N; ++i) {
+            str[i] = s[i];
+        }
+    }
+
+    template<std::size_t N1, std::size_t N2>
+    friend consteval auto operator+(const constring<N1>& a, const constring<N2>& b);
+
+    constexpr auto view() const -> std::string_view {
+        return { str.cbegin(), str.cend() };
+    }
+};
+template <std::size_t M>
+constring(const char (&)[M]) -> constring<M-1>;
+
+template<std::size_t N1, std::size_t N2>
+consteval auto operator+(const constring<N1>& a, const constring<N2>& b) {
+    constring<N1 + N2> result;
+    std::ranges::copy(a.str, result.str.begin());
+    std::ranges::copy(b.str, result.str.begin() + N1);
+    return result;
+}
+
+namespace constring_literals {
+template <constring Str>
+consteval auto operator""_cs() {
+    return Str;
+}
+}
+
+namespace detail {
+/** join_with ****************************/
+template<std::size_t M, std::size_t... Ns>
+constexpr auto join_with(std::tuple<std::array<char, Ns>...> t, std::array<char, M> s) {
+    constexpr std::size_t total_size = (Ns + ...) + (sizeof...(Ns) > 0 ? (sizeof...(Ns) - 1) * M : 0);
+    std::array<char, total_size> result{};
+    std::size_t offset = 0;
+
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        ([&] {
+            const auto& arr = std::get<Is>(t);
+
+            for (std::size_t i = 0; i < arr.size(); ++i) {
+                result[offset + i] = arr[i];
+            }
+            offset += arr.size();
+
+            if constexpr (Is != sizeof...(Is) - 1) {
+                for (std::size_t i = 0; i < s.size(); ++i) {
+                    result[offset + i] = s[i];
+                }
+                offset += s.size();
+            }
+        }(),
+        ...
+        );
+    }(std::make_index_sequence<sizeof...(Ns)>{});
+
+    return result;
+}
+
+/** get_typeinfo *************************/
+template <typename T>
+consteval auto get_typeinfo() {
+    using namespace std::string_view_literals;
+
+    constexpr std::string_view s { __PRETTY_FUNCTION__ };
+
+    constexpr auto last_bracket = s.rfind(']');
+    if (last_bracket == std::string_view::npos) {
+        return "find_type_error"sv;
+    }
+    constexpr auto last_equal = s.substr(0, last_bracket).rfind('=');
+    if (last_equal == std::string_view::npos) {
+        return "find_type_error"sv;
+    }
+    constexpr auto content = s.substr(last_equal + 1, last_bracket - last_equal - 1);
+
+    constexpr auto first = content.find_first_not_of(' ');
+    if (first == std::string_view::npos) {
+        return "find_type_error"sv;
+    }
+    constexpr auto last = content.find_last_not_of(' ');
+    constexpr auto result = content.substr(first, last - first + 1);
+
+    if constexpr (result.find("lambda") != std::string_view::npos) {
+        return "lambda"sv;
+    }
+    
+    return result;
+}
+} // namespace detail
+
+/** typeinfo *****************************/
+// only for clang
+template <typename... Ts>
+constexpr auto typeinfo = [] {
+    using namespace constring_literals;
+    std::tuple t { typeinfo<Ts>.str... };
+    return constring{ detail::join_with(t, (", "_cs).str) };
+}();
+template <typename T>
+constexpr auto typeinfo<T> = constring<detail::get_typeinfo<T>().size()>{ detail::get_typeinfo<T>() };
+template <>
+constexpr auto typeinfo<> { constring<0>{} };
+} // namespace spt
+} // namespace robo
+

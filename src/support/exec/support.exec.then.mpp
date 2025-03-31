@@ -1,0 +1,127 @@
+export module robo:support.exec.then;
+
+import std;
+import :support.typelist;
+import :support.exec.core;
+import :support.exec.concepts;
+import :support.exec.misc;
+
+export namespace robo {
+namespace spt {
+namespace exec {
+///////////////////////////////////////////
+// exec::then(sender, func) -> sender
+// sender | exec::then(func) -> sender
+///////////////////////////////////////////
+namespace detail {
+template <exec::sender S, typename F>
+struct then_sender {
+    /** receiver *************************/
+    template <typename R>
+    struct receiver {
+        static constexpr auto info = [] {
+            using namespace constring_literals;
+            return 
+                "then_receiver<"_cs 
+              + S::info + ", "_cs 
+              + spt::typeinfo<F> + ", "_cs 
+              + R::info + ">"_cs;
+        }();
+
+        [[no_unique_address]] R rcvr_out_;
+        [[no_unique_address]] F func_;
+
+        template <typename... Ts>
+            requires std::is_invocable_v<F, Ts...>
+        void set_value(receiver&&, Ts&&... vs) 
+            noexcept(std::is_nothrow_invocable_v<F, Ts...>) {
+            try {
+                if constexpr (std::same_as<void, std::invoke_result_t<F, Ts...>>) {
+                    static_assert(receiver_of<R>);
+                    std::invoke(std::move(func_), std::forward<Ts>(vs)...);
+                    exec::set_value(std::move(rcvr_out_));
+                } else {
+                    static_assert(receiver_of<R, std::invoke_result_t<F, Ts...>>);
+                    exec::set_value(
+                        std::move(rcvr_out_),
+                        std::invoke(std::move(func_), std::forward<Ts>(vs)...));
+                }
+            } catch (...) {
+                exec::set_error(std::move(rcvr_out_), std::current_exception());
+            }
+        }
+        template <typename E>
+        void set_error(receiver&&, E&& e) noexcept {
+            exec::set_error(std::move(rcvr_out_), std::forward<E>(e));
+        }
+        void set_done(receiver&&) noexcept {
+            exec::set_done(std::move(rcvr_out_));
+        }
+    };
+
+    /** sender ***************************/
+    static constexpr auto info = [] {
+        using namespace constring_literals;
+        return "then_sender<"_cs + S::info + ", "_cs + spt::typeinfo<F> + ">"_cs;
+    }();
+
+    template <typename... Args>
+    using result_t_tl = spt::typelist<filter_void_tl<std::invoke_result_t<F, Args...>>>;
+    template<template<typename...> class Tuple, template<typename...> class Variant>
+    using value_types = 
+        zip_apply<
+            typename S::template value_types<result_t_tl, type_set_of_tl_tl>, 
+            Tuple, 
+            Variant>;
+
+    template<template<typename...> class Variant>
+    using error_types = type_set_of_tl_tl<
+        typename S::template error_types<spt::typelist>,
+        spt::typelist<std::exception_ptr>
+     >::template apply<Variant>;
+    static const constexpr bool sends_done { S::sends_done };
+
+    [[no_unique_address]] S sndr_in_;
+    [[no_unique_address]] F func_;
+
+    template <typename Self, exec::receiver R>
+        requires std::same_as<std::remove_cvref_t<Self>, then_sender>
+    auto connect(Self&&, R&& rcvr) {
+        return exec::connect(
+            std::forward_like<Self>(sndr_in_), 
+            receiver<std::remove_cvref_t<R>>{
+                std::forward<R>(rcvr),
+                std::forward_like<Self>(func_)
+            });
+    }
+};
+} // namespace detail
+
+/** then() & operator| *******************/
+template <exec::sender S, typename F>
+auto then(S&& sndr, F&& func) 
+    -> detail::then_sender<std::remove_cvref_t<S>, std::decay_t<F>> {
+    return { std::forward<S>(sndr), std::forward<F>(func) };
+}
+
+namespace detail {
+template <typename F>
+struct then_closure {
+    F func_;
+
+    template <exec::sender S>
+    friend auto operator|(S&& sndr, then_closure&& closure_self)
+        -> detail::then_sender<std::remove_cvref_t<S>, F> {
+        return then(std::forward<S>(sndr), std::move(closure_self.func_));
+    }
+};
+} // namespace detail
+
+template <typename F>
+auto then(F&& func) -> detail::then_closure<std::decay_t<F>> {
+    return { std::forward<F>(func) };
+}
+} // namespace exec
+} // namespace spt
+} // namespace robo
+
