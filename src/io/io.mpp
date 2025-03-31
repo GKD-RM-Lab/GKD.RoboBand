@@ -1,0 +1,10 @@
+export module robo:io;
+
+import std;
+export import :io.serial;
+
+export namespace robo {
+namespace io {
+} // namespace io
+} // namespace robo
+
