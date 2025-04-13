@@ -1,9 +1,456 @@
+module;
+
+#include <cerrno>
+#include <termios.h>
+#include <sys/file.h>
+#include <sys/poll.h>
+#include <unistd.h>
+
 export module robo:io.serial;
 
 import std;
+import :support;
+import :io.base;
 
 export namespace robo {
 namespace io {
+///////////////////////////////////////////
+// Serial: class definition
+///////////////////////////////////////////
+class Serial {
+public:
+    /** configuration related ************/
+    struct baud_rate {
+        consteval baud_rate(const unsigned int val);
+        const unsigned int val;
+        const speed_t flag;
+        constexpr operator unsigned int () const { return val; }
+    };
+    enum class data_bits : tcflag_t { five = CS5, six = CS6, seven = CS7, eight = CS8 };
+    enum class stop_bits { one, two };
+    enum class parity { none, odd, even };
+    enum class flow_control { none, hardware };
+
+    struct Config {
+        std::string name;
+        std::chrono::nanoseconds rx_idle_duration;
+        std::size_t rx_buffer_size;
+        baud_rate baud_rate;
+        data_bits data_bits { data_bits::eight };
+        stop_bits stop_bits { stop_bits::one };
+        parity parity { parity::none };
+        flow_control flow_control { flow_control::none };
+        bool apply(termios& tio) const;
+    };
+
+private:
+    /** members **************************/
+    Fd fd_ {};
+    io::state state_ { io::state::offline };
+    const Config config_;
+    std::function<void()> callback_ { nullptr };
+    std::vector<std::byte> rx_buffer_ {};
+    std::vector<std::byte> tx_buffer_ {};
+    std::mutex tx_mutex_ {};
+
+public:
+    /** ctors ****************************/
+    Serial(spt::thread_context& context, const Config& config);
+    Serial(
+        spt::thread_context& context, 
+        const std::string& name, 
+        const std::chrono::nanoseconds& rx_idle_duration,
+        const std::size_t rx_buffer_size, 
+        const baud_rate baud_rate);
+    ~Serial() = default;
+    Serial(const Serial&) = delete;
+    Serial& operator=(const Serial&) = delete;
+    Serial(Serial&&) = delete;
+    Serial& operator=(Serial&&) = delete;
+
+    /** user interface *******************/
+    [[nodiscard]]
+    auto state() const { return state_; }
+    void register_callback(spt::invocable_r<void> auto&& func);
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T> and
+            (not std::convertible_to<T, std::span<const std::byte>>)
+    void send(const T& t) { 
+        send(std::as_bytes(std::span{&t, 1}));
+    }
+    void send(std::span<const std::byte> bytes);
+
+    auto get_rx_bytes() const -> std::span<const std::byte> {
+        return rx_buffer_;
+    }
+
+private:
+    /** implementation details ***********/
+    void open();
+    auto tx_rx_ready() -> std::pair<bool, bool>;
+    void write();
+    bool read();
+    void task();
+};
+
+///////////////////////////////////////////
+// Serial: configuration related
+///////////////////////////////////////////
+consteval Serial::baud_rate::baud_rate(const unsigned int val) : 
+    val { val }, 
+    flag { static_cast<speed_t>([val] {
+        switch (val) {
+#ifdef B50
+            case 50: return B50;
+#endif
+#ifdef B75
+            case 75: return B75;
+#endif
+#ifdef B110
+            case 110: return B110;
+#endif
+#ifdef B134
+            case 134: return B134;
+#endif
+#ifdef B150
+            case 150: return B150;
+#endif
+#ifdef B200
+            case 200: return B200;
+#endif
+#ifdef B300
+            case 300: return B300;
+#endif
+#ifdef B600
+            case 600: return B600;
+#endif
+#ifdef B1200
+            case 1200: return B1200;
+#endif
+#ifdef B1800
+            case 1800: return B1800;
+#endif
+#ifdef B2400
+            case 2400: return B2400;
+#endif
+#ifdef B4800
+            case 4800: return B4800;
+#endif
+#ifdef B7200
+            case 7200: return B7200;
+#endif
+#ifdef B9600
+            case 9600: return B9600;
+#endif
+#ifdef B14400
+            case 14400: return B14400;
+#endif
+#ifdef B19200
+            case 19200: return B19200;
+#endif
+#ifdef B28800
+            case 28800: return B28800;
+#endif
+#ifdef B38400
+            case 38400: return B38400;
+#endif
+#ifdef B57600
+            case 57600: return B57600;
+#endif
+#ifdef B76800
+            case 76800: return B76800;
+#endif
+#ifdef B115200
+            case 115200: return B115200;
+#endif
+#ifdef B230400
+            case 230400: return B230400;
+#endif
+#ifdef B460800
+            case 460800: return B460800;
+#endif
+#ifdef B500000
+            case 500000: return B500000;
+#endif
+#ifdef B576000
+            case 576000: return B576000;
+#endif
+#ifdef B921600
+            case 921600: return B921600;
+#endif
+#ifdef B1000000
+            case 1000000: return B1000000;
+#endif
+#ifdef B1152000
+            case 1152000: return B1152000;
+#endif
+#ifdef B1500000
+            case 1500000: return B1500000;
+#endif
+#ifdef B2000000
+            case 2000000: return B2000000;
+#endif
+#ifdef B2500000
+            case 2500000: return B2500000;
+#endif
+#ifdef B3000000
+            case 3000000: return B3000000;
+#endif
+#ifdef B3500000
+            case 3500000: return B3500000;
+#endif
+#ifdef B4000000
+            case 4000000: return B4000000;
+#endif
+            default:
+                throw std::logic_error{ std::format("invalid baud_rate {}", val) };
+        }
+    }()) } {}
+
+bool Serial::Config::apply(termios& tio) const {
+    tio.c_cflag &= (tcflag_t) ~CSIZE;
+    tio.c_cflag |= (tcflag_t) ((tcflag_t)data_bits | CREAD | CLOCAL);
+
+    tio.c_lflag &= 
+        (tcflag_t) ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ECHOCTL | ISIG | IEXTEN);
+
+    tio.c_iflag &= (tcflag_t) ~(IXON | IXOFF | IXANY);
+    tio.c_iflag &= 
+        (tcflag_t) ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IUCLC);
+
+    tio.c_oflag &= (tcflag_t) ~(OPOST | ONLCR);
+
+    tio.c_cc[VTIME] = 0;
+    tio.c_cc[VMIN] = 0;
+
+    switch (stop_bits) {
+        using enum stop_bits;
+        case one: 
+            tio.c_cflag &= (tcflag_t) ~CSTOPB;
+            break;
+        case two: 
+            tio.c_cflag |= (tcflag_t) CSTOPB;
+            break;
+    }
+    switch (parity) {
+        using enum parity;
+        case none:
+            tio.c_cflag &= (tcflag_t) ~(PARODD | PARENB);
+            break;
+        case odd:
+            tio.c_cflag |= (tcflag_t) (PARENB | PARODD);
+            break;
+        case even:
+            tio.c_cflag |= (tcflag_t) PARENB;
+            tio.c_cflag &= (tcflag_t) ~(PARODD);
+            break;
+    }
+    switch (flow_control) {
+        using enum flow_control;
+        case none:
+            tio.c_cflag &= (tcflag_t) ~CRTSCTS;
+            break;
+        case hardware:
+            tio.c_cflag |= (tcflag_t) CRTSCTS;
+            break;
+    }
+
+    return ::cfsetspeed(&tio, baud_rate.flag);
+}
+
+///////////////////////////////////////////
+// Serial: class ctor
+///////////////////////////////////////////
+Serial::Serial(spt::thread_context& context, const Config& config) :
+    config_ { config } {
+    context.add_task([this] { task(); }, config_.rx_idle_duration);
+}
+Serial::Serial(
+    spt::thread_context& context, 
+    const std::string& name,
+    const std::chrono::nanoseconds& rx_idle_duration,
+    const std::size_t rx_buffer_size, 
+    const baud_rate baud_rate) :
+    Serial { context, Config{ name, rx_idle_duration, rx_buffer_size, baud_rate } } {}
+
+///////////////////////////////////////////
+// Serial: user interface
+///////////////////////////////////////////
+void Serial::register_callback(spt::invocable_r<void> auto&& func) {
+    if (callback_) {
+        throw std::logic_error{ 
+            "repeatedly register callback to serial port " + config_.name 
+        };
+    }
+    callback_ = std::forward<decltype(func)>(func);
+}
+
+void Serial::send(std::span<const std::byte> bytes) {
+    if (state_ != io::state::working) {
+        tx_buffer_.clear();
+        return;
+    }
+
+    std::lock_guard lock { tx_mutex_ };
+    tx_buffer_.append_range(bytes);
+}
+
+///////////////////////////////////////////
+// Serial: implementation details
+///////////////////////////////////////////
+/** open *********************************/
+void Serial::open() {
+    Fd fd { ::open(config_.name.c_str(), O_RDWR | O_NOCTTY) };
+    termios tio;
+
+    if (not callback_) {
+        throw std::logic_error{ 
+            "have not registered callback before opening serial port " + config_.name 
+        };
+    }
+
+    if (not fd.is_valid()) {
+        state_ = io::state::offline;
+        throw std::system_error{ errno, std::system_category(), 
+            "failed to open serial port " + config_.name 
+        };
+    }
+
+    auto error = [this](const std::string& msg) {
+        state_ = io::state::error;
+        return std::system_error{ errno, std::system_category(), msg };
+    };
+    if (::tcgetattr(fd, &tio)) {
+        throw error("tcgetattr failed on serial port " + config_.name);
+    }
+    if (config_.apply(tio)) {
+        throw error("cfsetspeed failed on serial port " + config_.name);
+    }
+    if (::tcsetattr(fd, TCSANOW, &tio)) {
+        throw error("tcsetattr failed on serial port " + config_.name);
+    }
+    if (::tcflush(fd, TCIOFLUSH)) {
+        throw error("tcflush failed on serial port " + config_.name);
+    }
+
+    fd_ = std::move(fd);
+    state_ = io::state::working;
+}
+
+/** tx_rx_ready **************************/
+auto Serial::tx_rx_ready() -> std::pair<bool, bool> {
+    bool tx_ready { false };
+    bool rx_ready { false };
+
+    auto pfd = fd_.make_pollfd(POLLIN);
+    timespec ts { 0, 0 };
+
+    std::unique_lock lock { tx_mutex_ };
+    if (not tx_buffer_.empty()) pfd.events |= POLLOUT;
+    lock.unlock();
+
+    const int ret = ::ppoll(&pfd, 1, &ts, nullptr);
+    if (ret < 0) {
+        state_ = io::state::error;
+        throw std::system_error{ errno, std::system_category(), 
+            "ppoll failed on serial port " + config_.name
+        };
+    }
+    if (pfd.revents & ~POLLIN & ~POLLOUT) {
+        const int error_code = [ret = pfd.revents] {
+            if (ret & POLLHUP) return ENODEV;
+            if (ret & POLLNVAL) return EBADF;
+            return EIO;
+        }();
+        state_ = io::state::error;
+        throw std::system_error{ error_code, std::system_category(), 
+            "ppoll failed on serial port " + config_.name + std::format(", revents: 0b{:016b}", pfd.revents)
+        };
+    }
+
+    if (pfd.revents & POLLOUT) tx_ready = true;
+    if (pfd.revents & POLLIN)  rx_ready = true;
+
+    return { tx_ready, rx_ready };
+}
+
+/** write & read *************************/
+void Serial::write() {
+    std::unique_lock lock { tx_mutex_ };
+    auto tx_bytes { std::move(tx_buffer_) };
+    lock.unlock();
+
+    auto tx_bytes_num = ::write(fd_, std::bit_cast<void*>(tx_bytes.data()), tx_bytes.size());
+    if (tx_bytes_num < 0) {
+        state_ = io::state::error;
+        throw std::system_error { errno, std::system_category(), 
+            "write failed on serial port " + config_.name
+        };
+    }
+    if (static_cast<std::size_t>(tx_bytes_num) < tx_bytes.size()) {
+        lock.lock();
+        tx_buffer_.insert(tx_buffer_.begin(), tx_bytes.begin() + tx_bytes_num, tx_bytes.end());
+        lock.unlock();
+    }
+}
+
+bool Serial::read() {
+    rx_buffer_.resize(config_.rx_buffer_size);
+
+    auto rx_bytes_num = ::read(fd_, std::bit_cast<void*>(rx_buffer_.data()), config_.rx_buffer_size);
+    if (rx_bytes_num < 0) {
+        state_ = io::state::error;
+        throw std::system_error { errno, std::system_category(), 
+            "read failed on serial port " + config_.name
+        };
+    } 
+    if (rx_bytes_num == 0) {
+        return false;
+    }
+
+    rx_buffer_.resize(static_cast<std::size_t>(rx_bytes_num));
+    return true;
+}
+
+/** task *********************************/
+void Serial::task() {
+    try {
+        switch (state_) {
+            using enum io::state;
+            case offline:
+                open();
+                break;
+            case error: [[unlikely]]
+                throw std::logic_error{ "uncaught error on serial port " + config_.name };
+                break;
+            case working:
+                auto [tx_ready, rx_ready] = tx_rx_ready();
+                if (tx_ready) write();
+                if (not rx_ready) break;
+                if (not read())     break;
+                callback_();
+                break;
+        }
+    } catch (const std::system_error& err) {
+        if (not (err.code().category() == std::system_category())) throw;
+        switch (err.code().value()) {
+            case EIO:
+                [[fallthrough]];
+            case EBADF:
+                fd_.close();
+                [[fallthrough]];
+            case ENODEV: 
+                [[fallthrough]];
+            case ENOENT:
+                // TODO log
+                state_ = io::state::offline;
+                break;
+            default:
+                throw;
+        }
+    }
+}
 } // namespace io
 } // namespace robo
 

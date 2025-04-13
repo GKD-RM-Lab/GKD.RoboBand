@@ -1,10 +1,67 @@
+module;
+
+#include <unistd.h>
+#include <cerrno>
+#include <sys/poll.h>
+
 export module robo:io.base;
 
 import std;
 
 export namespace robo {
 namespace io {
+enum class state {
+    offline,
+    error,
+    working,
+};
 
+class Fd {
+private:
+    static constexpr int empty_fd { -1 };
+    int fd_ { empty_fd };
+
+public:
+    Fd() = default;
+    explicit Fd(int fd)
+        : fd_{ fd } {}
+    ~Fd() {
+        close();
+    }
+
+    Fd(Fd &&other) noexcept
+        : fd_{ std::exchange(other.fd_, empty_fd) } {}
+    Fd& operator=(Fd &&other) noexcept {
+        close();
+        fd_ = std::exchange(other.fd_, empty_fd);
+        return *this;
+    }
+
+    Fd(const Fd &other) noexcept = delete;
+    Fd& operator=(const Fd &other) noexcept = delete;
+
+    [[nodiscard]]
+    bool is_valid() const { return fd_ >= 0; }
+    [[nodiscard]]
+    auto get() const -> const int& { return fd_; }
+    [[nodiscard]]
+    operator int() const { return fd_; }
+
+    void close() {
+        if (not is_valid()) return;
+        int fd_temp = std::exchange(fd_, empty_fd);
+        auto ret = ::close(fd_temp);
+        if (ret != 0) {
+            throw std::system_error{ errno, std::system_category(),
+                std::format("close fd {} failed", fd_)
+            };
+        }
+    }
+
+    pollfd make_pollfd(short events) {
+        return { fd_, events, 0 };
+    }
+};
 } // namespace io
 } // namespace robo
 

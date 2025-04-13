@@ -1,0 +1,67 @@
+export module robo:support.context;
+
+import std;
+import :support.misc;
+
+export namespace robo {
+namespace spt {
+class thread_context {
+private:
+    bool started_ { false };
+    bool finishing_ { false };
+
+    std::vector<std::function<void()>> tasks_ {};
+    std::jthread thread_ { [this] { run(); } };
+
+    std::source_location location_;
+    std::chrono::nanoseconds idle_duration_ { std::chrono::nanoseconds::max() };
+
+public:
+    thread_context(
+        const std::chrono::nanoseconds& idle_duration_default = std::chrono::nanoseconds::max(), 
+        std::source_location location = std::source_location::current()) :
+        location_ { location }, idle_duration_ { idle_duration_default } {}
+    ~thread_context() {
+        if (not started_) [] { throw std::logic_error{ "you created a context but never started it" }; }();
+        finish();
+    }
+
+    void add_task(spt::invocable_r<void> auto&& task, const std::chrono::nanoseconds& idle_duration = std::chrono::nanoseconds::max()) {
+        tasks_.emplace_back(std::forward<decltype(task)>(task));
+        idle_duration_ = std::min(idle_duration_, idle_duration);
+    }
+    void start() { 
+        if (tasks_.size() == 0) {
+            throw std::logic_error{ 
+                std::format(
+                    "{}({}:{}): thread_context has no assigned task.",
+                    location_.file_name(),
+                    location_.line(),
+                    location_.column()
+                )};
+        }
+        if (idle_duration_ == std::chrono::nanoseconds::max()) {
+            throw std::logic_error{ 
+                std::format(
+                    "{}({}:{}): idle duration have not been set.",
+                    location_.file_name(),
+                    location_.line(),
+                    location_.column()
+                )};
+        }
+        started_ = true;
+    }
+    void finish() noexcept { finishing_ = true; }
+    void run() noexcept {
+        while (not started_ and not finishing_);
+        while (not finishing_) {
+            for (auto& task : tasks_) {
+                task();
+            }
+            std::this_thread::sleep_for(idle_duration_);
+        }
+    }
+};
+} // namespace spt
+} // namespace robo
+

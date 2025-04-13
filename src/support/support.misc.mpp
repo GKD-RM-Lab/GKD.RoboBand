@@ -1,0 +1,11 @@
+export module robo:support.misc;
+
+import std;
+
+export namespace robo {
+namespace spt {
+template <typename F, typename Ret, typename... Args>
+concept invocable_r = std::is_invocable_r_v<Ret, F, Args...>;
+} // namespace spt
+} // namespace robo
+
