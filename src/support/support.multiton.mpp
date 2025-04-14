@@ -5,26 +5,43 @@ import :support.misc;
 
 export namespace robo {
 namespace spt {
+///////////////////////////////////////////
+// concepts:
+//     owner (impl) : info() info_type                     
+//     info         : key()  key_type owner_type 
+//     multiton     : get()  key_type owner_type info_type
+// usage:
+//     multiton::get() -> owner
+//     owner.info()    -> info
+//     info.key()      -> key
+///////////////////////////////////////////
 template <typename T>
-concept info_owner =
-    spt::immovable<T> and
-    spt::not_copyable<T> and
+concept info =
     requires(T t) {
-        typename T::info_type;
-        typename T::info_type::key_type;
-        { std::declval<typename T::info_type>().key() } 
-            -> std::same_as<typename T::info_type::key_type>;
+        typename T::key_type;
+        typename T::owner_type;
+        { t.key() } -> std::same_as<typename T::key_type>;
+        { t.label() } -> std::same_as<std::string>;
     };
 
-template <info_owner T>
-class multiton {
-    using info_type = typename T::info_type;
-    using key_type = typename T::info_type::key_type;
+template <typename T>
+concept owner =
+    spt::immovable<T> and
+    spt::not_copyable<T> and
+    info<typename T::info_type> and
+    requires(T t) {
+        { t.info() } -> std::same_as<const typename T::info_type&>;
+    };
 
-protected:
-    inline static std::unordered_map<key_type, std::unique_ptr<T>> instances_ {};
+template <info T>
+struct multiton {
+    using info_type = T;
+    using key_type = typename T::key_type;
+    using owner_type = typename T::owner_type;
+    static_assert(std::same_as<info_type, typename owner_type::info_type>);
 
-public:
+    inline static std::unordered_map<key_type, std::unique_ptr<owner_type>> instances {};
+
     multiton() = default;
     ~multiton() = default;
     multiton(const multiton&) = delete;
@@ -32,16 +49,18 @@ public:
     multiton(multiton&&) = delete;
     multiton& operator=(multiton&&) = delete;
 
+    // NOT thread-safe. Instance modifications are confined to the 
+    // configuration phase (single-threaded), thus no synchronization used.
     [[nodiscard]]
-    static auto get(const info_type& info) -> T& {
-        auto it = instances_.find(info.key());
-        if (it != instances_.end()) {
+    static auto get(const info_type& info) -> owner_type& {
+        auto it = instances.find(info.key());
+        if (it != instances.end()) {
             return *it->second;
         }
 
-        auto instance = std::make_unique<T>(info);
-        T& ret = *instance;
-        instances_.emplace(info.key(), std::move(instance));
+        auto instance = std::make_unique<owner_type>(info);
+        owner_type& ret = *instance;
+        instances.emplace(info.key(), std::move(instance));
         return ret;
     };
 };

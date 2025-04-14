@@ -7,6 +7,7 @@ module;
 export module robo:io.base;
 
 import std;
+import :support;
 
 export namespace robo {
 namespace io {
@@ -15,6 +16,44 @@ enum class state {
     error,
     working,
 };
+
+template <typename T>
+concept bare_io_impl =
+    spt::owner<T> and
+    requires(T t) {
+        { t.send(std::declval<std::span<const std::byte>>()) } -> std::same_as<void>;
+        { t.register_callback([] {}) } -> std::same_as<void>;
+        { t.get_rx_bytes() } -> std::same_as<std::span<const std::byte>>;
+    };
+
+template <typename T>
+concept bare_io_info =
+    spt::info<T> and
+    bare_io_impl<typename T::owner_type>;
+
+void send(bare_io_impl auto& io_impl, auto&&... args) {
+    io_impl.send(std::forward<decltype(args)>(args)...);
+}
+void send(bare_io_info auto& io_info, auto&&... args) {
+    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
+    spt::multiton<io_info_type>::get(io_info).send(std::forward<decltype(args)>(args)...);
+}
+
+void register_callback(bare_io_impl auto& io_impl, spt::invocable_r<void> auto&& func) {
+    io_impl.register_callback(std::forward<decltype(func)>(func));
+}
+void register_callback(bare_io_info auto& io_info, spt::invocable_r<void> auto&& func) {
+    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
+    register_callback(spt::multiton<io_info_type>::get(io_info), std::forward<decltype(func)>(func));
+}
+
+auto get_rx_bytes(bare_io_impl auto& io_impl) {
+    return io_impl.get_rx_bytes();
+}
+auto get_rx_bytes(bare_io_info auto& io_info) {
+    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
+    return spt::multiton<io_info_type>::get(io_info).get_rx_bytes();
+}
 
 class Fd {
 private:

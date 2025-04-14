@@ -36,7 +36,8 @@ public:
 
     struct Info {
         using key_type = std::string_view;
-        
+        using owner_type = SerialImpl;
+    
         std::string_view name;
         const spt::thread_context::info& context;
         std::chrono::nanoseconds rx_idle_duration;
@@ -51,6 +52,10 @@ public:
         bool apply(termios& tio) const;
         [[nodiscard]]
         auto key() const { return name; }
+        [[nodiscard]]
+        auto label() const { 
+            return std::format("serial port {}", name);
+        }
     };
     using info_type = Info;
 
@@ -66,20 +71,13 @@ private:
     std::mutex tx_mutex_ {};
 
 public:
-    /** ctors ****************************/
+    /** ctor *****************************/
     SerialImpl(const Info& config);
-    // Serial(
-    //     const std::string_view name, 
-    //     const std::chrono::nanoseconds& rx_idle_duration,
-    //     const std::size_t rx_buffer_size, 
-    //     const baud_rate baud_rate);
     ~SerialImpl() = default;
-    SerialImpl(const SerialImpl&) = delete;
-    SerialImpl& operator=(const SerialImpl&) = delete;
-    SerialImpl(SerialImpl&&) = delete;
-    SerialImpl& operator=(SerialImpl&&) = delete;
 
     /** user interface *******************/
+    [[nodiscard]]
+    auto info() const -> const Info& { return info_; };
     [[nodiscard]]
     auto state() const { return state_; }
     void register_callback(spt::invocable_r<void> auto&& func);
@@ -279,15 +277,10 @@ bool SerialImpl::Info::apply(termios& tio) const {
 SerialImpl::SerialImpl(const Info& config) :
     info_ { config } {
     spt::thread_context::get(info_.context).add_task(
-        [this] { task(); }, info_.rx_idle_duration
+        [this] { task(); }, 
+        info_.rx_idle_duration
     );
 }
-// Serial::Serial(
-//     const std::string_view name,
-//     const std::chrono::nanoseconds& rx_idle_duration,
-//     const std::size_t rx_buffer_size, 
-//     const baud_rate baud_rate) :
-//     Serial { Config{ name, rx_idle_duration, rx_buffer_size, baud_rate } } {}
 
 ///////////////////////////////////////////
 // Serial: user interface
@@ -295,7 +288,7 @@ SerialImpl::SerialImpl(const Info& config) :
 void SerialImpl::register_callback(spt::invocable_r<void> auto&& func) {
     if (callback_) {
         throw std::logic_error{ 
-            "repeatedly register callback to serial port " + name_
+            "repeatedly register callback to " + info_.label()
         };
     }
     callback_ = std::forward<decltype(func)>(func);
@@ -321,14 +314,14 @@ void SerialImpl::open() {
 
     if (not callback_) {
         throw std::logic_error{ 
-            "have not registered callback before opening serial port " + name_
+            "have not registered callback before opening " + info_.label()
         };
     }
 
     if (not fd.is_valid()) {
         state_ = io::state::offline;
         throw std::system_error{ errno, std::system_category(), 
-            "failed to open serial port " + name_
+            "failed to open " + info_.label()
         };
     }
 
@@ -337,16 +330,16 @@ void SerialImpl::open() {
         return std::system_error{ errno, std::system_category(), msg };
     };
     if (::tcgetattr(fd, &tio)) {
-        throw error("tcgetattr failed on serial port " + name_);
+        throw error("tcgetattr failed on " + info_.label());
     }
     if (info_.apply(tio)) {
-        throw error("cfsetspeed failed on serial port " + name_);
+        throw error("cfsetspeed failed on " + info_.label());
     }
     if (::tcsetattr(fd, TCSANOW, &tio)) {
-        throw error("tcsetattr failed on serial port " + name_);
+        throw error("tcsetattr failed on " + info_.label());
     }
     if (::tcflush(fd, TCIOFLUSH)) {
-        throw error("tcflush failed on serial port " + name_);
+        throw error("tcflush failed on " + info_.label());
     }
 
     fd_ = std::move(fd);
@@ -369,7 +362,7 @@ auto SerialImpl::tx_rx_ready() -> std::pair<bool, bool> {
     if (ret < 0) {
         state_ = io::state::error;
         throw std::system_error{ errno, std::system_category(), 
-            "ppoll failed on serial port " + name_
+            "ppoll failed on " + info_.label()
         };
     }
     if (pfd.revents & ~POLLIN & ~POLLOUT) {
@@ -380,7 +373,7 @@ auto SerialImpl::tx_rx_ready() -> std::pair<bool, bool> {
         }();
         state_ = io::state::error;
         throw std::system_error{ error_code, std::system_category(), 
-            "ppoll failed on serial port " + name_ + std::format(", revents: 0b{:016b}", pfd.revents)
+            "ppoll failed on " + info_.label() + std::format(", revents: 0b{:016b}", pfd.revents)
         };
     }
 
@@ -400,7 +393,7 @@ void SerialImpl::write() {
     if (tx_bytes_num < 0) {
         state_ = io::state::error;
         throw std::system_error { errno, std::system_category(), 
-            "write failed on serial port " + name_
+            "write failed on " + info_.label()
         };
     }
     if (static_cast<std::size_t>(tx_bytes_num) < tx_bytes.size()) {
@@ -417,7 +410,7 @@ bool SerialImpl::read() {
     if (rx_bytes_num < 0) {
         state_ = io::state::error;
         throw std::system_error { errno, std::system_category(), 
-            "read failed on serial port " + name_
+            "read failed on " + info_.label()
         };
     } 
     if (rx_bytes_num == 0) {
@@ -437,7 +430,7 @@ void SerialImpl::task() {
                 open();
                 break;
             case error: [[unlikely]]
-                throw std::logic_error{ "uncaught error on serial port " + name_ };
+                throw std::logic_error{ "uncaught error on " + info_.label() };
                 break;
             case working:
                 auto [tx_ready, rx_ready] = tx_rx_ready();
@@ -466,12 +459,13 @@ void SerialImpl::task() {
         }
     }
 }
+static_assert(bare_io_impl<SerialImpl>);
 } // namespace detail
 
-struct Serial : public spt::multiton<detail::SerialImpl> {
+namespace Serial {
     using Info = detail::SerialImpl::Info;
-};
-
+    auto& get = spt::multiton<Info>::get;
+} // namespace Serial
 } // namespace io
 } // namespace robo
 

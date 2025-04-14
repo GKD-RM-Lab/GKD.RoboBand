@@ -26,6 +26,13 @@ struct not_copyable_base {
     not_copyable_base(const not_copyable_base&) = delete;
     not_copyable_base& operator=(const not_copyable_base&) = delete;
 };
+
+namespace byte_literals {
+consteval std::byte operator"" _b(unsigned long long int byte) {
+    if (byte > 0xff) throw std::out_of_range{ "std::byte literal exceeds 0xff." };
+    return static_cast<std::byte>(byte);
+}
+} // namespace byte_literals
 } // namespace spt
 } // namespace robo
 
