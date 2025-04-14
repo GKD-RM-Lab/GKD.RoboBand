@@ -14,10 +14,13 @@ import :io.base;
 
 export namespace robo {
 namespace io {
+namespace detail {
 ///////////////////////////////////////////
 // Serial: class definition
 ///////////////////////////////////////////
-class Serial {
+class SerialImpl :
+    public spt::immovable_base, 
+    public spt::not_copyable_base {
 public:
     /** configuration related ************/
     struct baud_rate {
@@ -31,8 +34,11 @@ public:
     enum class parity { none, odd, even };
     enum class flow_control { none, hardware };
 
-    struct Config {
-        std::string name;
+    struct Info {
+        using key_type = std::string_view;
+        
+        std::string_view name;
+        const spt::thread_context::info& context;
         std::chrono::nanoseconds rx_idle_duration;
         std::size_t rx_buffer_size;
         baud_rate baud_rate;
@@ -40,14 +46,20 @@ public:
         stop_bits stop_bits { stop_bits::one };
         parity parity { parity::none };
         flow_control flow_control { flow_control::none };
+
+        [[nodiscard]]
         bool apply(termios& tio) const;
+        [[nodiscard]]
+        auto key() const { return name; }
     };
+    using info_type = Info;
 
 private:
     /** members **************************/
     Fd fd_ {};
     io::state state_ { io::state::offline };
-    const Config config_;
+    const Info info_;
+    const std::string name_ { info_.name };
     std::function<void()> callback_ { nullptr };
     std::vector<std::byte> rx_buffer_ {};
     std::vector<std::byte> tx_buffer_ {};
@@ -55,18 +67,17 @@ private:
 
 public:
     /** ctors ****************************/
-    Serial(spt::thread_context& context, const Config& config);
-    Serial(
-        spt::thread_context& context, 
-        const std::string& name, 
-        const std::chrono::nanoseconds& rx_idle_duration,
-        const std::size_t rx_buffer_size, 
-        const baud_rate baud_rate);
-    ~Serial() = default;
-    Serial(const Serial&) = delete;
-    Serial& operator=(const Serial&) = delete;
-    Serial(Serial&&) = delete;
-    Serial& operator=(Serial&&) = delete;
+    SerialImpl(const Info& config);
+    // Serial(
+    //     const std::string_view name, 
+    //     const std::chrono::nanoseconds& rx_idle_duration,
+    //     const std::size_t rx_buffer_size, 
+    //     const baud_rate baud_rate);
+    ~SerialImpl() = default;
+    SerialImpl(const SerialImpl&) = delete;
+    SerialImpl& operator=(const SerialImpl&) = delete;
+    SerialImpl(SerialImpl&&) = delete;
+    SerialImpl& operator=(SerialImpl&&) = delete;
 
     /** user interface *******************/
     [[nodiscard]]
@@ -81,6 +92,7 @@ public:
     }
     void send(std::span<const std::byte> bytes);
 
+    [[nodiscard]]
     auto get_rx_bytes() const -> std::span<const std::byte> {
         return rx_buffer_;
     }
@@ -88,8 +100,10 @@ public:
 private:
     /** implementation details ***********/
     void open();
+    [[nodiscard]]
     auto tx_rx_ready() -> std::pair<bool, bool>;
     void write();
+    [[nodiscard]]
     bool read();
     void task();
 };
@@ -97,7 +111,7 @@ private:
 ///////////////////////////////////////////
 // Serial: configuration related
 ///////////////////////////////////////////
-consteval Serial::baud_rate::baud_rate(const unsigned int val) : 
+consteval SerialImpl::baud_rate::baud_rate(const unsigned int val) : 
     val { val }, 
     flag { static_cast<speed_t>([val] {
         switch (val) {
@@ -208,7 +222,7 @@ consteval Serial::baud_rate::baud_rate(const unsigned int val) :
         }
     }()) } {}
 
-bool Serial::Config::apply(termios& tio) const {
+bool SerialImpl::Info::apply(termios& tio) const {
     tio.c_cflag &= (tcflag_t) ~CSIZE;
     tio.c_cflag |= (tcflag_t) ((tcflag_t)data_bits | CREAD | CLOCAL);
 
@@ -262,31 +276,32 @@ bool Serial::Config::apply(termios& tio) const {
 ///////////////////////////////////////////
 // Serial: class ctor
 ///////////////////////////////////////////
-Serial::Serial(spt::thread_context& context, const Config& config) :
-    config_ { config } {
-    context.add_task([this] { task(); }, config_.rx_idle_duration);
+SerialImpl::SerialImpl(const Info& config) :
+    info_ { config } {
+    spt::thread_context::get(info_.context).add_task(
+        [this] { task(); }, info_.rx_idle_duration
+    );
 }
-Serial::Serial(
-    spt::thread_context& context, 
-    const std::string& name,
-    const std::chrono::nanoseconds& rx_idle_duration,
-    const std::size_t rx_buffer_size, 
-    const baud_rate baud_rate) :
-    Serial { context, Config{ name, rx_idle_duration, rx_buffer_size, baud_rate } } {}
+// Serial::Serial(
+//     const std::string_view name,
+//     const std::chrono::nanoseconds& rx_idle_duration,
+//     const std::size_t rx_buffer_size, 
+//     const baud_rate baud_rate) :
+//     Serial { Config{ name, rx_idle_duration, rx_buffer_size, baud_rate } } {}
 
 ///////////////////////////////////////////
 // Serial: user interface
 ///////////////////////////////////////////
-void Serial::register_callback(spt::invocable_r<void> auto&& func) {
+void SerialImpl::register_callback(spt::invocable_r<void> auto&& func) {
     if (callback_) {
         throw std::logic_error{ 
-            "repeatedly register callback to serial port " + config_.name 
+            "repeatedly register callback to serial port " + name_
         };
     }
     callback_ = std::forward<decltype(func)>(func);
 }
 
-void Serial::send(std::span<const std::byte> bytes) {
+void SerialImpl::send(std::span<const std::byte> bytes) {
     if (state_ != io::state::working) {
         tx_buffer_.clear();
         return;
@@ -300,20 +315,20 @@ void Serial::send(std::span<const std::byte> bytes) {
 // Serial: implementation details
 ///////////////////////////////////////////
 /** open *********************************/
-void Serial::open() {
-    Fd fd { ::open(config_.name.c_str(), O_RDWR | O_NOCTTY) };
+void SerialImpl::open() {
+    Fd fd { ::open(name_.c_str(), O_RDWR | O_NOCTTY) };
     termios tio;
 
     if (not callback_) {
         throw std::logic_error{ 
-            "have not registered callback before opening serial port " + config_.name 
+            "have not registered callback before opening serial port " + name_
         };
     }
 
     if (not fd.is_valid()) {
         state_ = io::state::offline;
         throw std::system_error{ errno, std::system_category(), 
-            "failed to open serial port " + config_.name 
+            "failed to open serial port " + name_
         };
     }
 
@@ -322,16 +337,16 @@ void Serial::open() {
         return std::system_error{ errno, std::system_category(), msg };
     };
     if (::tcgetattr(fd, &tio)) {
-        throw error("tcgetattr failed on serial port " + config_.name);
+        throw error("tcgetattr failed on serial port " + name_);
     }
-    if (config_.apply(tio)) {
-        throw error("cfsetspeed failed on serial port " + config_.name);
+    if (info_.apply(tio)) {
+        throw error("cfsetspeed failed on serial port " + name_);
     }
     if (::tcsetattr(fd, TCSANOW, &tio)) {
-        throw error("tcsetattr failed on serial port " + config_.name);
+        throw error("tcsetattr failed on serial port " + name_);
     }
     if (::tcflush(fd, TCIOFLUSH)) {
-        throw error("tcflush failed on serial port " + config_.name);
+        throw error("tcflush failed on serial port " + name_);
     }
 
     fd_ = std::move(fd);
@@ -339,7 +354,7 @@ void Serial::open() {
 }
 
 /** tx_rx_ready **************************/
-auto Serial::tx_rx_ready() -> std::pair<bool, bool> {
+auto SerialImpl::tx_rx_ready() -> std::pair<bool, bool> {
     bool tx_ready { false };
     bool rx_ready { false };
 
@@ -354,7 +369,7 @@ auto Serial::tx_rx_ready() -> std::pair<bool, bool> {
     if (ret < 0) {
         state_ = io::state::error;
         throw std::system_error{ errno, std::system_category(), 
-            "ppoll failed on serial port " + config_.name
+            "ppoll failed on serial port " + name_
         };
     }
     if (pfd.revents & ~POLLIN & ~POLLOUT) {
@@ -365,7 +380,7 @@ auto Serial::tx_rx_ready() -> std::pair<bool, bool> {
         }();
         state_ = io::state::error;
         throw std::system_error{ error_code, std::system_category(), 
-            "ppoll failed on serial port " + config_.name + std::format(", revents: 0b{:016b}", pfd.revents)
+            "ppoll failed on serial port " + name_ + std::format(", revents: 0b{:016b}", pfd.revents)
         };
     }
 
@@ -376,7 +391,7 @@ auto Serial::tx_rx_ready() -> std::pair<bool, bool> {
 }
 
 /** write & read *************************/
-void Serial::write() {
+void SerialImpl::write() {
     std::unique_lock lock { tx_mutex_ };
     auto tx_bytes { std::move(tx_buffer_) };
     lock.unlock();
@@ -385,7 +400,7 @@ void Serial::write() {
     if (tx_bytes_num < 0) {
         state_ = io::state::error;
         throw std::system_error { errno, std::system_category(), 
-            "write failed on serial port " + config_.name
+            "write failed on serial port " + name_
         };
     }
     if (static_cast<std::size_t>(tx_bytes_num) < tx_bytes.size()) {
@@ -395,14 +410,14 @@ void Serial::write() {
     }
 }
 
-bool Serial::read() {
-    rx_buffer_.resize(config_.rx_buffer_size);
+bool SerialImpl::read() {
+    rx_buffer_.resize(info_.rx_buffer_size);
 
-    auto rx_bytes_num = ::read(fd_, std::bit_cast<void*>(rx_buffer_.data()), config_.rx_buffer_size);
+    auto rx_bytes_num = ::read(fd_, std::bit_cast<void*>(rx_buffer_.data()), info_.rx_buffer_size);
     if (rx_bytes_num < 0) {
         state_ = io::state::error;
         throw std::system_error { errno, std::system_category(), 
-            "read failed on serial port " + config_.name
+            "read failed on serial port " + name_
         };
     } 
     if (rx_bytes_num == 0) {
@@ -414,7 +429,7 @@ bool Serial::read() {
 }
 
 /** task *********************************/
-void Serial::task() {
+void SerialImpl::task() {
     try {
         switch (state_) {
             using enum io::state;
@@ -422,7 +437,7 @@ void Serial::task() {
                 open();
                 break;
             case error: [[unlikely]]
-                throw std::logic_error{ "uncaught error on serial port " + config_.name };
+                throw std::logic_error{ "uncaught error on serial port " + name_ };
                 break;
             case working:
                 auto [tx_ready, rx_ready] = tx_rx_ready();
@@ -451,6 +466,12 @@ void Serial::task() {
         }
     }
 }
+} // namespace detail
+
+struct Serial : public spt::multiton<detail::SerialImpl> {
+    using Info = detail::SerialImpl::Info;
+};
+
 } // namespace io
 } // namespace robo
 

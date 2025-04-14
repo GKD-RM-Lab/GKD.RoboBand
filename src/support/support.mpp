@@ -2,4 +2,5 @@ export module robo:support;
 
 export import :support.misc;
 export import :support.context;
+export import :support.multiton;
 

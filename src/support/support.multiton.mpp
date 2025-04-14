@@ -1,0 +1,50 @@
+export module robo:support.multiton;
+
+import std;
+import :support.misc;
+
+export namespace robo {
+namespace spt {
+template <typename T>
+concept info_owner =
+    spt::immovable<T> and
+    spt::not_copyable<T> and
+    requires(T t) {
+        typename T::info_type;
+        typename T::info_type::key_type;
+        { std::declval<typename T::info_type>().key() } 
+            -> std::same_as<typename T::info_type::key_type>;
+    };
+
+template <info_owner T>
+class multiton {
+    using info_type = typename T::info_type;
+    using key_type = typename T::info_type::key_type;
+
+protected:
+    inline static std::unordered_map<key_type, std::unique_ptr<T>> instances_ {};
+
+public:
+    multiton() = default;
+    ~multiton() = default;
+    multiton(const multiton&) = delete;
+    multiton& operator=(const multiton&) = delete;
+    multiton(multiton&&) = delete;
+    multiton& operator=(multiton&&) = delete;
+
+    [[nodiscard]]
+    static auto get(const info_type& info) -> T& {
+        auto it = instances_.find(info.key());
+        if (it != instances_.end()) {
+            return *it->second;
+        }
+
+        auto instance = std::make_unique<T>(info);
+        T& ret = *instance;
+        instances_.emplace(info.key(), std::move(instance));
+        return ret;
+    };
+};
+} // namespace spt
+} // namespace robo
+

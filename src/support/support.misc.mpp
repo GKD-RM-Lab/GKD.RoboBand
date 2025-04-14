@@ -6,6 +6,26 @@ export namespace robo {
 namespace spt {
 template <typename F, typename Ret, typename... Args>
 concept invocable_r = std::is_invocable_r_v<Ret, F, Args...>;
+
+template <typename T>
+concept immovable = 
+    (not std::is_move_constructible_v<T>) and
+    (not std::is_move_assignable_v<T>);
+template <typename T>
+concept not_copyable = 
+    (not std::is_copy_constructible_v<T>) and
+    (not std::is_copy_assignable_v<T>);
+
+struct immovable_base {
+    immovable_base() = default;
+    immovable_base(immovable_base&&) = delete;
+    immovable_base& operator=(immovable_base&&) = delete;
+};
+struct not_copyable_base {
+    not_copyable_base() = default;    
+    not_copyable_base(const not_copyable_base&) = delete;
+    not_copyable_base& operator=(const not_copyable_base&) = delete;
+};
 } // namespace spt
 } // namespace robo
 

@@ -2,55 +2,69 @@ export module robo:support.context;
 
 import std;
 import :support.misc;
+import :support.multiton;
 
 export namespace robo {
 namespace spt {
-class thread_context {
+namespace detail {
+
+class thread_context_impl : 
+    public spt::immovable_base, 
+    public spt::not_copyable_base {
+public:
+    struct info {
+        using key_type = unsigned int;
+
+        const key_type id;
+        std::chrono::nanoseconds idle_duration;
+
+        consteval info(
+            const key_type id,
+            const std::chrono::nanoseconds& idle_duration = std::chrono::nanoseconds::max()) : 
+            id { id }, idle_duration { idle_duration } {}
+        [[nodiscard]]
+        auto key() const { return id; }
+    };
+    using info_type = info;
+
 private:
     bool started_ { false };
     bool finishing_ { false };
-
+    info info_;
     std::vector<std::function<void()>> tasks_ {};
     std::jthread thread_ { [this] { run(); } };
 
-    std::source_location location_;
-    std::chrono::nanoseconds idle_duration_ { std::chrono::nanoseconds::max() };
-
 public:
-    thread_context(
-        const std::chrono::nanoseconds& idle_duration_default = std::chrono::nanoseconds::max(), 
-        std::source_location location = std::source_location::current()) :
-        location_ { location }, idle_duration_ { idle_duration_default } {}
-    ~thread_context() {
-        if (not started_) [] { throw std::logic_error{ "you created a context but never started it" }; }();
+    thread_context_impl(const info& info) : info_ { info } {}
+    ~thread_context_impl() {
+        if (not started_) [] { 
+            throw std::logic_error{ "you created a context but never started it" }; 
+        }();
         finish();
     }
 
-    void add_task(spt::invocable_r<void> auto&& task, const std::chrono::nanoseconds& idle_duration = std::chrono::nanoseconds::max()) {
+    void add_task(
+        spt::invocable_r<void> auto&& task, 
+        const std::chrono::nanoseconds& idle_duration = std::chrono::nanoseconds::max()) {
         tasks_.emplace_back(std::forward<decltype(task)>(task));
-        idle_duration_ = std::min(idle_duration_, idle_duration);
+        info_.idle_duration = std::min(info_.idle_duration, idle_duration);
     }
-    void start() { 
+    void start() {
         if (tasks_.size() == 0) {
             throw std::logic_error{ 
-                std::format(
-                    "{}({}:{}): thread_context has no assigned task.",
-                    location_.file_name(),
-                    location_.line(),
-                    location_.column()
-                )};
+                "thread_context " + std::to_string(info_.id) + " has no assigned task."
+            };
         }
-        if (idle_duration_ == std::chrono::nanoseconds::max()) {
+        if (info_.idle_duration == std::chrono::nanoseconds::max()) {
             throw std::logic_error{ 
-                std::format(
-                    "{}({}:{}): idle duration have not been set.",
-                    location_.file_name(),
-                    location_.line(),
-                    location_.column()
-                )};
+                "thread_context " + std::to_string(info_.id) + ": idle duration have not been set.",
+            };
         }
+        // TODO log
         started_ = true;
     }
+
+private:
     void finish() noexcept { finishing_ = true; }
     void run() noexcept {
         while (not started_ and not finishing_);
@@ -58,7 +72,26 @@ public:
             for (auto& task : tasks_) {
                 task();
             }
-            std::this_thread::sleep_for(idle_duration_);
+            std::this_thread::sleep_for(info_.idle_duration);
+        }
+    }
+};
+} // namespace detail
+
+struct thread_context : multiton<detail::thread_context_impl> {
+    using info = detail::thread_context_impl::info;
+
+    template <std::size_t N = 1> requires (N != 0)
+    [[nodiscard]]
+    static consteval auto make() -> std::array<info, N> {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return std::array<info, N>{ info{I}... };
+        }(std::make_index_sequence<N>{});
+    }
+
+    static void start() {
+        for (auto& [_, e] : multiton<detail::thread_context_impl>::instances_) {
+            e->start();
         }
     }
 };

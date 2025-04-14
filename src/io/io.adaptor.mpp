@@ -1,0 +1,16 @@
+export module robo:io.adaptor;
+
+import std;
+import :support;
+import :io.base;
+
+export namespace robo {
+namespace io {
+template <typename Io>
+struct Adaptor : public Io {
+    using Io::Io;
+
+};
+} // namespace io
+} // namespace robo
+
