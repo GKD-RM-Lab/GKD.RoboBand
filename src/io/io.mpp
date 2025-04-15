@@ -1,6 +1,6 @@
 export module robo:io;
 
 export import :io.base;
-export import :io.adaptor;
+export import :io.parser;
 export import :io.serial;
 

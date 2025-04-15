@@ -1,4 +1,4 @@
-export module robo:io.adaptor;
+export module robo:io.parser;
 
 import std;
 import :support;
@@ -7,7 +7,7 @@ import :io.base;
 export namespace robo {
 namespace io {
 template <typename T>
-concept adaptor =
+concept keyed_parser =
     requires() {
         { std::hash<typename T::key_type>{}(std::declval<typename T::key_type>()) }
             -> std::convertible_to<std::size_t>;
@@ -17,29 +17,29 @@ concept adaptor =
     };
 
 namespace detail {
-template <adaptor Adaptor, bare_io_info Io>
-class AdaptorImpl {
+template <keyed_parser P, bare_io_info Io>
+class KeyedParserImpl {
 public:
     struct Info : Io {
-        using owner_type = AdaptorImpl;
+        using owner_type = KeyedParserImpl;
         auto desc() const {
-            return std::format("{} (with adaptor {})", Io::desc(), Adaptor::desc());
+            return std::format("{} (with parser {})", Io::desc(), P::desc());
         }
     };
     using info_type = Info;
 
 private:
     const Info info_;
-    std::unordered_map<typename Adaptor::key_type, std::function<void(std::span<const std::byte>)>> callbacks_;
+    std::unordered_map<typename P::key_type, io_callback_func_type> callbacks_;
 
 public:
-    AdaptorImpl(const Info& info) : info_ { info } {
+    KeyedParserImpl(const Info& info) : info_ { info } {
         io::register_callback(static_cast<const Io&>(info), [this](auto bytes) { this->callback(bytes); });      
     }
 
     [[nodiscard]]
     auto info() const -> const Info& { return info_; };
-    void register_callback(typename Adaptor::key_type key, io_callback auto&& func) {
+    void register_callback(typename P::key_type key, io_callback auto&& func) {
         auto [_, success] = callbacks_.emplace(key, std::forward<decltype(func)>(func));
         if (not success) {
             throw std::logic_error{ 
@@ -50,9 +50,9 @@ public:
 
 private:
     void callback(auto rx_bytes) {
-        auto ret = Adaptor::get_key(rx_bytes);
+        auto ret = P::get_key(rx_bytes);
         if (not ret.has_value() or not callbacks_.contains(ret.value())) {
-            io::error_handler(spt::multiton<Io>::get(info_), io::error::invalid_data, info_.desc());
+            io::error_handler(static_cast<Io>(info_), io::error::invalid_data);
             return;
         }
         callbacks_[ret.value()](rx_bytes);
@@ -60,18 +60,18 @@ private:
 };
 } // namespace detail
 
-template <adaptor Adaptor>
-void register_callback(bare_io_info auto& io_info, auto key, io_callback auto&& func) {
+template <keyed_parser P>
+void register_callback(const bare_io_info auto& io_info, auto key, io_callback auto&& func) {
     using io_info_type = std::remove_cvref_t<decltype(io_info)>;
-    using adaptor_key_type = typename Adaptor::key_type;
-    using adaptor_info_type = typename detail::AdaptorImpl<Adaptor, io_info_type>::info_type;
-    static_assert(std::convertible_to<decltype(key), adaptor_key_type>);
-    spt::multiton<adaptor_info_type>::get(static_cast<const adaptor_info_type&>(io_info))
+    using parser_key_type = typename P::key_type;
+    using parser_info_type = typename detail::KeyedParserImpl<P, io_info_type>::info_type;
+    static_assert(std::convertible_to<decltype(key), parser_key_type>);
+    spt::multiton<parser_info_type>::get(static_cast<const parser_info_type&>(io_info))
         .register_callback(key, std::forward<decltype(func)>(func));
 }
-template <adaptor Adaptor>
+template <keyed_parser P>
 void register_callback(bare_io_impl auto& io_impl, auto key, io_callback auto&& func) {
-    register_callback<Adaptor>(io_impl.info(), key, std::forward<decltype(func)>(func));
+    register_callback<P>(io_impl.info(), key, std::forward<decltype(func)>(func));
 }
 
 template <std::size_t N = 1> requires (N > 0)
@@ -97,6 +97,16 @@ struct prefix_key<1> {
     }
     static constexpr auto desc() -> std::string { return "prefix_key<1>"; }
 };
+
+decltype(auto) crc(io_callback auto&& func) {
+    return [func = std::forward<decltype(func)>(func)](auto bytes) { 
+        if (true) {
+            func(bytes);
+        } else {
+            // TODO io::error_handler();
+        }
+    };
+}
 } // namespace io
 } // namespace robo
 
