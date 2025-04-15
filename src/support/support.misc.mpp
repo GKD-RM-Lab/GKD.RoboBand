@@ -7,6 +7,15 @@ namespace spt {
 template <typename F, typename Ret, typename... Args>
 concept invocable_r = std::is_invocable_r_v<Ret, F, Args...>;
 
+namespace detail {
+template <typename T, template <typename...> class S>
+struct instance_of_impl : std::false_type {};
+template <template <typename...> class S, typename... Args>
+struct instance_of_impl<S<Args...>, S> : std::true_type {};
+} // namespace detail
+template <typename T, template <typename...> class S>
+concept instance_of = detail::instance_of_impl<T, S>::value;
+
 template <typename T>
 concept immovable = 
     (not std::is_move_constructible_v<T>) and

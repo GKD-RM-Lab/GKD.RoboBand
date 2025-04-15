@@ -64,14 +64,17 @@ private:
     Fd fd_ {};
     io::state state_ { io::state::offline };
     const info_type info_;
-    
-    io_callback_func_type callback_ { nullptr };
-    io_error_handler_func_type_of<info_type> error_handler_ { io::default_error_handler };
-    bool error_handler_registed { false };
 
     std::mutex tx_mutex_ {};
     std::vector<std::byte> tx_buffer_ {};
     std::vector<std::byte> rx_buffer_ {};
+
+    bool error_handler_registed { false };
+    std::function<void(std::span<const std::byte>)> callback_ { nullptr };
+public:
+    std::function<void(const info_type&, const io::error)> error_handler {
+        io::default_error_handler {}
+    };
 
 public:
     /** ctor *****************************/
@@ -85,9 +88,6 @@ public:
     auto state() const { return state_; }
     void register_callback(io_callback auto&& func);
     void register_error_handler(io_error_handler_of<info_type> auto&& func);
-    void error_handler(const info_type& info, const io::error err) {
-        error_handler_(info, err);
-    }
 
     template <typename T>
         requires std::is_trivially_copyable_v<T> and
@@ -302,7 +302,7 @@ void SerialImpl::register_error_handler(io_error_handler_of<info_type> auto&& fu
             "repeatedly register error handler to " + info_.desc()
         };
     }
-    error_handler_ = std::forward<decltype(func)>(func);
+    error_handler = std::forward<decltype(func)>(func);
     error_handler_registed = true;
 }
 
@@ -473,7 +473,7 @@ static_assert(bare_io_impl<SerialImpl>);
 
 namespace Serial {
     using Info = detail::SerialImpl::info_type;
-    auto& get = spt::multiton<Info>::get;
+    auto& get = spt::multiton::get<Info>;
 } // namespace Serial
 } // namespace io
 } // namespace robo

@@ -31,7 +31,7 @@ int main() {
         }
     };
 
-    robo::io::register_error_handler(serial, robo::io::allow_no_callback);
+    robo::io::register_error_handler(serial, robo::io::allow_no_callback{});
 
     robo::io::register_callback<robo::io::prefix_key<4>>(
         serial, key1, [&](auto bytes) { callback(key1, bytes); });

@@ -34,8 +34,9 @@ concept owner =
         { t.info() } -> std::same_as<const typename T::info_type&>;
     };
 
+namespace detail {
 template <info T>
-struct multiton {
+struct multiton_impl {
     using info_type = T;
     using key_type = typename T::key_type;
     using owner_type = typename T::owner_type;
@@ -44,12 +45,12 @@ struct multiton {
     inline static std::mutex mutex_;
     inline static std::unordered_map<key_type, std::unique_ptr<owner_type>> instances {};
 
-    multiton() = default;
-    ~multiton() = default;
-    multiton(const multiton&) = delete;
-    multiton& operator=(const multiton&) = delete;
-    multiton(multiton&&) = delete;
-    multiton& operator=(multiton&&) = delete;
+    multiton_impl() = default;
+    ~multiton_impl() = default;
+    multiton_impl(const multiton_impl&) = delete;
+    multiton_impl& operator=(const multiton_impl&) = delete;
+    multiton_impl(multiton_impl&&) = delete;
+    multiton_impl& operator=(multiton_impl&&) = delete;
 
     [[nodiscard]]
     static auto get(const info_type& info) -> owner_type& {
@@ -65,6 +66,19 @@ struct multiton {
         return ret;
     };
 };
+} // namespace detail
+
+namespace multiton {
+auto& get(const info auto& info) {
+    using info_type = std::remove_cvref_t<decltype(info)>;
+    return spt::detail::multiton_impl<info_type>::get(info);
+};
+template <info T>
+auto& instances() {
+    using info_type = std::remove_cvref_t<T>;
+    return spt::detail::multiton_impl<info_type>::instances;
+}
+} // namespace multiton
 } // namespace spt
 } // namespace robo
 

@@ -6,6 +6,9 @@ import :io.base;
 
 export namespace robo {
 namespace io {
+///////////////////////////////////////////
+// TODO comments
+///////////////////////////////////////////
 template <typename T>
 concept keyed_parser =
     requires() {
@@ -27,10 +30,11 @@ public:
         }
     };
     using info_type = Info;
+    using parser_key_type = typename P::key_type;
 
 private:
     const Info info_;
-    std::unordered_map<typename P::key_type, io_callback_func_type> callbacks_;
+    std::unordered_map<parser_key_type, std::function<void(std::span<const std::byte>)>> callbacks_;
 
 public:
     KeyedParserImpl(const Info& info) : info_ { info } {
@@ -39,7 +43,7 @@ public:
 
     [[nodiscard]]
     auto info() const -> const Info& { return info_; };
-    void register_callback(typename P::key_type key, io_callback auto&& func) {
+    void register_callback(parser_key_type key, io_callback auto&& func) {
         auto [_, success] = callbacks_.emplace(key, std::forward<decltype(func)>(func));
         if (not success) {
             throw std::logic_error{ 
@@ -60,18 +64,35 @@ private:
 };
 } // namespace detail
 
+template <spt::instance_of<detail::KeyedParserImpl> P>
+void register_callback(P& p_impl,
+                       std::convertible_to<typename P::parser_key_type> auto key, 
+                       io_callback auto&& func) {
+    p_impl.register_callback(key, std::forward<decltype(func)>(func));
+}
+template <typename P>
+    requires spt::instance_of<typename P::owner_type, detail::KeyedParserImpl>
+void register_callback(const P& p_info,  
+                       std::convertible_to<typename P::owner_type::parser_key_type> auto key, 
+                       io_callback auto&& func) {
+    spt::multiton::get(p_info) .register_callback(key, std::forward<decltype(func)>(func));
+}
+
 template <keyed_parser P>
-void register_callback(const bare_io_info auto& io_info, auto key, io_callback auto&& func) {
+void register_callback(const bare_io_info auto& io_info, 
+                       std::convertible_to<typename P::key_type> auto key, 
+                       auto&&... args) {
     using io_info_type = std::remove_cvref_t<decltype(io_info)>;
-    using parser_key_type = typename P::key_type;
     using parser_info_type = typename detail::KeyedParserImpl<P, io_info_type>::info_type;
-    static_assert(std::convertible_to<decltype(key), parser_key_type>);
-    spt::multiton<parser_info_type>::get(static_cast<const parser_info_type&>(io_info))
-        .register_callback(key, std::forward<decltype(func)>(func));
+    io::register_callback(static_cast<const parser_info_type&>(io_info), 
+                          key, 
+                          std::forward<decltype(args)>(args)...);
 }
 template <keyed_parser P>
-void register_callback(bare_io_impl auto& io_impl, auto key, io_callback auto&& func) {
-    register_callback<P>(io_impl.info(), key, std::forward<decltype(func)>(func));
+void register_callback(bare_io_impl auto& io_impl,
+                       std::convertible_to<typename P::key_type> auto key, 
+                       auto&&... args) {
+    register_callback<P>(io_impl.info(), key, std::forward<decltype(args)>(args)...);
 }
 
 template <std::size_t N = 1> requires (N > 0)

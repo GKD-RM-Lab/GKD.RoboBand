@@ -90,25 +90,25 @@ private:
 } // namespace detail
 
 namespace thread_context {
-    using info = struct detail::thread_context_impl::info;
-    auto& get = spt::multiton<info>::get;
+using info = struct detail::thread_context_impl::info;
+auto& get = spt::multiton::get<info>;
 
-    template <std::size_t N> requires (N > 1)
-    [[nodiscard]]
-    consteval auto make() -> std::array<info, N> {
-        return []<std::size_t... I>(std::index_sequence<I...>) {
-            return std::array<info, N>{ info{I}... };
-        }(std::make_index_sequence<N>{});
+template <std::size_t N> requires (N > 1)
+[[nodiscard]]
+consteval auto make() -> std::array<info, N> {
+    return []<std::size_t... I>(std::index_sequence<I...>) {
+        return std::array<info, N>{ info{I}... };
+    }(std::make_index_sequence<N>{});
+}
+[[nodiscard]]
+consteval auto make() -> info {
+    return info{ 0 };
+}
+void start() {
+    for (auto& [_, e] : spt::multiton::instances<info>()) {
+        e->start();
     }
-    [[nodiscard]]
-    consteval auto make() -> info {
-        return info{ 0 };
-    }
-    void start() {
-        for (auto& [_, e] : multiton<info>::instances) {
-            e->start();
-        }
-    }
+}
 } // namespace thread_context
 } // namespace spt
 } // namespace robo
