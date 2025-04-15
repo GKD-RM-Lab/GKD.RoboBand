@@ -65,7 +65,7 @@ private:
     io::state state_ { io::state::offline };
     const Info info_;
     
-    std::function<void()> callback_ { nullptr };
+    std::function<void(std::span<const std::byte>)> callback_ { nullptr };
     std::function<void(const io::error, const std::string&)> error_handler_ { io::default_error_handler };
     bool error_handler_registed { false };
 
@@ -83,9 +83,8 @@ public:
     auto info() const -> const Info& { return info_; };
     [[nodiscard]]
     auto state() const { return state_; }
-    void register_callback(spt::invocable_r<void> auto&& func);
-    template <spt::invocable_r<void, const io::error, const std::string&> F>
-    void register_error_handler(F&& error_handler);
+    void register_callback(io_callback auto&& func);
+    void register_error_handler(io_error_handler auto&& error_handler);
     void error_handler(const io::error err, const std::string& io_desc) {
         error_handler_(err, io_desc);
     }
@@ -97,11 +96,6 @@ public:
         send(std::as_bytes(std::span{&t, 1}));
     }
     void send(std::span<const std::byte> bytes);
-
-    [[nodiscard]]
-    auto get_rx_bytes() const -> std::span<const std::byte> {
-        return rx_buffer_;
-    }
 
 private:
     /** implementation details ***********/
@@ -293,7 +287,7 @@ SerialImpl::SerialImpl(const Info& config) :
 ///////////////////////////////////////////
 // Serial: user interface
 ///////////////////////////////////////////
-void SerialImpl::register_callback(spt::invocable_r<void> auto&& func) {
+void SerialImpl::register_callback(io_callback auto&& func) {
     if (callback_) {
         throw std::logic_error{ 
             "repeatedly register callback to " + info_.desc()
@@ -302,14 +296,13 @@ void SerialImpl::register_callback(spt::invocable_r<void> auto&& func) {
     callback_ = std::forward<decltype(func)>(func);
 }
 
-template <spt::invocable_r<void, const io::error, const std::string&> F>
-void SerialImpl::register_error_handler(F&& func) {
+void SerialImpl::register_error_handler(io_error_handler auto&& func) {
     if (error_handler_registed) {
         throw std::logic_error{ 
             "repeatedly register error handler to " + info_.desc()
         };
     }
-    error_handler_ = std::forward<F>(func);
+    error_handler_ = std::forward<decltype(func)>(func);
     error_handler_registed = true;
 }
 
@@ -453,7 +446,7 @@ void SerialImpl::task() {
                 if (tx_ready) write();
                 if (not rx_ready) break;
                 if (not read())   break;
-                callback_();
+                callback_(rx_buffer_);
                 break;
         }
     } catch (const std::system_error& err) {

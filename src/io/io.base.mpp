@@ -53,11 +53,14 @@ void allow_no_callback(const io::error err, const std::string& io_desc) {
 };
 
 template <typename T>
+concept io_callback = spt::invocable_r<T, void, std::span<const std::byte>>;
+template <typename T>
+concept io_error_handler = spt::invocable_r<T, void, const io::error, const std::string&>;
+
+template <typename T>
 concept io_impl_base =
     spt::owner<T> and
     requires(T t) {
-        { t.send(std::declval<std::span<const std::byte>>()) } -> std::same_as<void>;
-        { t.get_rx_bytes() } -> std::same_as<std::span<const std::byte>>;
         { t.error_handler(std::declval<const io::error>(), std::declval<const std::string&>()) }
             -> std::same_as<void>;
         { t.register_error_handler([](const io::error, const std::string&) {}) }
@@ -67,13 +70,14 @@ template <typename T>
 concept bare_io_impl =
     io_impl_base<T> and
     requires(T t) {
-        { t.register_callback([] {}) } -> std::same_as<void>;
+        { t.register_callback([](std::span<const std::byte>) {}) } 
+            -> std::same_as<void>;
     };
 template <typename T>
 concept keyed_io_impl =
     io_impl_base<T> and
     requires(T t) {
-        { t.register_callback(std::declval<typename T::io_key_type>(), [] {}) }
+        { t.register_callback(std::declval<typename T::io_key_type>(), [](std::span<const std::byte>) {}) } 
             -> std::same_as<void>;
     };
 template <typename T>
@@ -98,14 +102,6 @@ void send(io_impl auto& io_impl, auto&&... args) {
 void send(io_info auto& io_info, auto&&... args) {
     using io_info_type = std::remove_cvref_t<decltype(io_info)>;
     spt::multiton<io_info_type>::get(io_info).send(std::forward<decltype(args)>(args)...);
-}
-
-auto get_rx_bytes(io_impl auto& io_impl) {
-    return io_impl.get_rx_bytes();
-}
-auto get_rx_bytes(io_info auto& io_info) {
-    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
-    return spt::multiton<io_info_type>::get(io_info).get_rx_bytes();
 }
 
 void register_callback(io_impl auto& io_impl, auto&&... args) {

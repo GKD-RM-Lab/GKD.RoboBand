@@ -30,16 +30,16 @@ public:
 
 private:
     const Info info_;
-    std::unordered_map<typename Adaptor::key_type, std::function<void()>> callbacks_;
+    std::unordered_map<typename Adaptor::key_type, std::function<void(std::span<const std::byte>)>> callbacks_;
 
 public:
     AdaptorImpl(const Info& info) : info_ { info } {
-        io::register_callback(static_cast<const Io&>(info), [this] { callback(); });      
+        io::register_callback(static_cast<const Io&>(info), [this](auto bytes) { this->callback(bytes); });      
     }
 
     [[nodiscard]]
     auto info() const -> const Info& { return info_; };
-    void register_callback(typename Adaptor::key_type key, spt::invocable_r<void> auto&& func) {
+    void register_callback(typename Adaptor::key_type key, io_callback auto&& func) {
         auto [_, success] = callbacks_.emplace(key, std::forward<decltype(func)>(func));
         if (not success) {
             throw std::logic_error{ 
@@ -49,20 +49,19 @@ public:
     }
 
 private:
-    void callback() {
-        auto rx_bytes = spt::multiton<Io>::get(info_).get_rx_bytes();
+    void callback(auto rx_bytes) {
         auto ret = Adaptor::get_key(rx_bytes);
         if (not ret.has_value() or not callbacks_.contains(ret.value())) {
             io::error_handler(spt::multiton<Io>::get(info_), io::error::invalid_data, info_.desc());
             return;
         }
-        callbacks_[ret.value()]();
+        callbacks_[ret.value()](rx_bytes);
     }
 };
 } // namespace detail
 
 template <adaptor Adaptor>
-void register_callback(bare_io_info auto& io_info, auto key, spt::invocable_r<void> auto&& func) {
+void register_callback(bare_io_info auto& io_info, auto key, io_callback auto&& func) {
     using io_info_type = std::remove_cvref_t<decltype(io_info)>;
     using adaptor_key_type = typename Adaptor::key_type;
     using adaptor_info_type = typename detail::AdaptorImpl<Adaptor, io_info_type>::info_type;
@@ -71,7 +70,7 @@ void register_callback(bare_io_info auto& io_info, auto key, spt::invocable_r<vo
         .register_callback(key, std::forward<decltype(func)>(func));
 }
 template <adaptor Adaptor>
-void register_callback(bare_io_impl auto& io_impl, auto key, spt::invocable_r<void> auto&& func) {
+void register_callback(bare_io_impl auto& io_impl, auto key, io_callback auto&& func) {
     register_callback<Adaptor>(io_impl.info(), key, std::forward<decltype(func)>(func));
 }
 
@@ -101,7 +100,7 @@ struct prefix_key<1> {
 } // namespace io
 } // namespace robo
 
-export template<std::size_t N>
+export template<std::size_t N> requires (N > 1)
 struct std::hash<std::array<std::byte, N>>
 {
     std::size_t operator()(const std::array<std::byte, N>& bytes) const noexcept

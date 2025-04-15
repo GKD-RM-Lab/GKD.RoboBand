@@ -18,8 +18,7 @@ constexpr std::array key2 { 0x55_b, 0xaa_b, 0x01_b, 0x02_b };
 constexpr std::array key3 { 0x55_b, 0xaa_b, 0x01_b, 0x03_b };
 
 int main() {
-    auto callback = [](auto key) {
-        auto rx_bytes = robo::io::get_rx_bytes(serial);
+    auto callback = [](auto key, auto rx_bytes) {
         // if (rx_bytes.size() != 19) {
         if (true) {
             std::println("{}", std::chrono::system_clock::now());
@@ -35,11 +34,11 @@ int main() {
     robo::io::register_error_handler(serial, robo::io::allow_no_callback);
 
     robo::io::register_callback<robo::io::prefix_key<4>>(
-        serial, key1, [&] { callback(key1); });
+        serial, key1, [&](auto bytes) { callback(key1, bytes); });
     robo::io::register_callback<robo::io::prefix_key<4>>(
-        serial, key2, [&] { callback(key2); });
+        serial, key2, [&](auto bytes) { callback(key2, bytes); });
     robo::io::register_callback<robo::io::prefix_key<4>>(
-        serial, key3, [&] { callback(key3); });
+        serial, key3, [&](auto bytes) { callback(key3, bytes); });
 
     auto send_task = [] {
         while (true) {
