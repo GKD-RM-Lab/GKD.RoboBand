@@ -1,5 +1,5 @@
 export module robo:dev;
 
-import std;
 export import :dev.motor;
+export import :dev.imu;
 

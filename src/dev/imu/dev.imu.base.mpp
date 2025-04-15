@@ -1,0 +1,16 @@
+export module robo:dev.imu.base;
+
+import std;
+
+export namespace robo {
+namespace dev {
+struct Imu {
+};
+
+template <typename T>
+concept imu =
+    std::derived_from<T, Imu>;
+
+} // namespace dev
+} // namespace robo
+

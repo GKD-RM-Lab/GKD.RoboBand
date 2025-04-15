@@ -53,7 +53,7 @@ public:
         [[nodiscard]]
         auto key() const { return name; }
         [[nodiscard]]
-        auto label() const { 
+        auto desc() const { 
             return std::format("serial port {}", name);
         }
     };
@@ -64,11 +64,14 @@ private:
     Fd fd_ {};
     io::state state_ { io::state::offline };
     const Info info_;
-    const std::string name_ { info_.name };
+    
     std::function<void()> callback_ { nullptr };
-    std::vector<std::byte> rx_buffer_ {};
-    std::vector<std::byte> tx_buffer_ {};
+    std::function<void(const io::error, const std::string&)> error_handler_ { io::default_error_handler };
+    bool error_handler_registed { false };
+
     std::mutex tx_mutex_ {};
+    std::vector<std::byte> tx_buffer_ {};
+    std::vector<std::byte> rx_buffer_ {};
 
 public:
     /** ctor *****************************/
@@ -81,6 +84,11 @@ public:
     [[nodiscard]]
     auto state() const { return state_; }
     void register_callback(spt::invocable_r<void> auto&& func);
+    template <spt::invocable_r<void, const io::error, const std::string&> F>
+    void register_error_handler(F&& error_handler);
+    void error_handler(const io::error err, const std::string& io_desc) {
+        error_handler_(err, io_desc);
+    }
 
     template <typename T>
         requires std::is_trivially_copyable_v<T> and
@@ -288,13 +296,27 @@ SerialImpl::SerialImpl(const Info& config) :
 void SerialImpl::register_callback(spt::invocable_r<void> auto&& func) {
     if (callback_) {
         throw std::logic_error{ 
-            "repeatedly register callback to " + info_.label()
+            "repeatedly register callback to " + info_.desc()
         };
     }
     callback_ = std::forward<decltype(func)>(func);
 }
 
+template <spt::invocable_r<void, const io::error, const std::string&> F>
+void SerialImpl::register_error_handler(F&& func) {
+    if (error_handler_registed) {
+        throw std::logic_error{ 
+            "repeatedly register error handler to " + info_.desc()
+        };
+    }
+    error_handler_ = std::forward<F>(func);
+    error_handler_registed = true;
+}
+
 void SerialImpl::send(std::span<const std::byte> bytes) {
+    if (not callback_ and not error_handler_registed) {
+        error_handler(io::error::callback_unregistered, info_.desc());
+    }    
     if (state_ != io::state::working) {
         tx_buffer_.clear();
         return;
@@ -309,19 +331,15 @@ void SerialImpl::send(std::span<const std::byte> bytes) {
 ///////////////////////////////////////////
 /** open *********************************/
 void SerialImpl::open() {
-    Fd fd { ::open(name_.c_str(), O_RDWR | O_NOCTTY) };
+    Fd fd { ::open(std::string{info_.name}.c_str(), O_RDWR | O_NOCTTY) };
     termios tio;
 
-    if (not callback_) {
-        throw std::logic_error{ 
-            "have not registered callback before opening " + info_.label()
-        };
-    }
+    if (not callback_) error_handler(io::error::callback_unregistered, info_.desc());
 
     if (not fd.is_valid()) {
         state_ = io::state::offline;
         throw std::system_error{ errno, std::system_category(), 
-            "failed to open " + info_.label()
+            "failed to open " + info_.desc()
         };
     }
 
@@ -330,16 +348,16 @@ void SerialImpl::open() {
         return std::system_error{ errno, std::system_category(), msg };
     };
     if (::tcgetattr(fd, &tio)) {
-        throw error("tcgetattr failed on " + info_.label());
+        throw error("tcgetattr failed on " + info_.desc());
     }
     if (info_.apply(tio)) {
-        throw error("cfsetspeed failed on " + info_.label());
+        throw error("cfsetspeed failed on " + info_.desc());
     }
     if (::tcsetattr(fd, TCSANOW, &tio)) {
-        throw error("tcsetattr failed on " + info_.label());
+        throw error("tcsetattr failed on " + info_.desc());
     }
     if (::tcflush(fd, TCIOFLUSH)) {
-        throw error("tcflush failed on " + info_.label());
+        throw error("tcflush failed on " + info_.desc());
     }
 
     fd_ = std::move(fd);
@@ -348,21 +366,23 @@ void SerialImpl::open() {
 
 /** tx_rx_ready **************************/
 auto SerialImpl::tx_rx_ready() -> std::pair<bool, bool> {
-    bool tx_ready { false };
-    bool rx_ready { false };
-
-    auto pfd = fd_.make_pollfd(POLLIN);
+    auto pfd = fd_.make_pollfd();
     timespec ts { 0, 0 };
+    if (callback_) pfd.events |= POLLIN;
 
     std::unique_lock lock { tx_mutex_ };
     if (not tx_buffer_.empty()) pfd.events |= POLLOUT;
     lock.unlock();
 
+    if (pfd.events == 0) return { false, false };
+
+    bool tx_ready { false };
+    bool rx_ready { false };
     const int ret = ::ppoll(&pfd, 1, &ts, nullptr);
     if (ret < 0) {
         state_ = io::state::error;
         throw std::system_error{ errno, std::system_category(), 
-            "ppoll failed on " + info_.label()
+            "ppoll failed on " + info_.desc()
         };
     }
     if (pfd.revents & ~POLLIN & ~POLLOUT) {
@@ -373,7 +393,7 @@ auto SerialImpl::tx_rx_ready() -> std::pair<bool, bool> {
         }();
         state_ = io::state::error;
         throw std::system_error{ error_code, std::system_category(), 
-            "ppoll failed on " + info_.label() + std::format(", revents: 0b{:016b}", pfd.revents)
+            "ppoll failed on " + info_.desc() + std::format(", revents: 0b{:016b}", pfd.revents)
         };
     }
 
@@ -392,9 +412,7 @@ void SerialImpl::write() {
     auto tx_bytes_num = ::write(fd_, std::bit_cast<void*>(tx_bytes.data()), tx_bytes.size());
     if (tx_bytes_num < 0) {
         state_ = io::state::error;
-        throw std::system_error { errno, std::system_category(), 
-            "write failed on " + info_.label()
-        };
+        error_handler(io::error::write_failed, info_.desc());
     }
     if (static_cast<std::size_t>(tx_bytes_num) < tx_bytes.size()) {
         lock.lock();
@@ -409,9 +427,7 @@ bool SerialImpl::read() {
     auto rx_bytes_num = ::read(fd_, std::bit_cast<void*>(rx_buffer_.data()), info_.rx_buffer_size);
     if (rx_bytes_num < 0) {
         state_ = io::state::error;
-        throw std::system_error { errno, std::system_category(), 
-            "read failed on " + info_.label()
-        };
+        error_handler(io::error::read_failed, info_.desc());
     } 
     if (rx_bytes_num == 0) {
         return false;
@@ -430,13 +446,13 @@ void SerialImpl::task() {
                 open();
                 break;
             case error: [[unlikely]]
-                throw std::logic_error{ "uncaught error on " + info_.label() };
+                throw std::logic_error{ "uncaught error on " + info_.desc() };
                 break;
             case working:
                 auto [tx_ready, rx_ready] = tx_rx_ready();
                 if (tx_ready) write();
                 if (not rx_ready) break;
-                if (not read())     break;
+                if (not read())   break;
                 callback_();
                 break;
         }
@@ -451,8 +467,8 @@ void SerialImpl::task() {
             case ENODEV: 
                 [[fallthrough]];
             case ENOENT:
-                // TODO log
                 state_ = io::state::offline;
+                error_handler(io::error::offline, info_.desc());
                 break;
             default:
                 throw;

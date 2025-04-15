@@ -10,17 +10,11 @@ struct Motor {
     virtual void setTorque(float torque) = 0;
 
     Motor() = default;
-    Motor(const Motor&) = delete;
-    Motor& operator=(const Motor&) = delete;
 };
 
 template <typename T>
 concept motor =
-    std::derived_from<T, Motor> and
-    std::move_constructible<T> and
-    std::is_move_assignable_v<T> and
-    not std::copy_constructible<T> and
-    not std::is_copy_assignable_v<T>;
+    std::derived_from<T, Motor>;
 
 } // namespace dev
 } // namespace robo

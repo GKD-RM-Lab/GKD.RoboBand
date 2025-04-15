@@ -17,42 +17,119 @@ enum class state {
     working,
 };
 
+enum class error {
+    offline,
+    invalid_data,
+    callback_unregistered,
+    read_failed,
+    write_failed,
+};
+
+void default_error_handler(const io::error err, const std::string& io_desc) {
+    switch (err) {
+        using enum io::error;
+        case error::offline:
+            break;
+        case error::invalid_data:
+            break;
+        case error::callback_unregistered:
+            throw std::logic_error{ 
+                "no callback registered to " + io_desc
+            };
+        case error::read_failed:
+            throw std::system_error { errno, std::system_category(), 
+                "read failed on " + io_desc
+            };
+        case error::write_failed: break;
+            throw std::system_error { errno, std::system_category(), 
+                "write failed on " + io_desc
+            };
+    }
+}
+void allow_no_callback(const io::error err, const std::string& io_desc) {
+    if (err != robo::io::error::callback_unregistered) {
+        robo::io::default_error_handler(err, io_desc);
+    }
+};
+
 template <typename T>
-concept bare_io_impl =
+concept io_impl_base =
     spt::owner<T> and
     requires(T t) {
         { t.send(std::declval<std::span<const std::byte>>()) } -> std::same_as<void>;
-        { t.register_callback([] {}) } -> std::same_as<void>;
         { t.get_rx_bytes() } -> std::same_as<std::span<const std::byte>>;
+        { t.error_handler(std::declval<const io::error>(), std::declval<const std::string&>()) }
+            -> std::same_as<void>;
+        { t.register_error_handler([](const io::error, const std::string&) {}) }
+            -> std::same_as<void>;
     };
+template <typename T>
+concept bare_io_impl =
+    io_impl_base<T> and
+    requires(T t) {
+        { t.register_callback([] {}) } -> std::same_as<void>;
+    };
+template <typename T>
+concept keyed_io_impl =
+    io_impl_base<T> and
+    requires(T t) {
+        { t.register_callback(std::declval<typename T::io_key_type>(), [] {}) }
+            -> std::same_as<void>;
+    };
+template <typename T>
+concept io_impl =
+    bare_io_impl<T> or keyed_io_impl<T>;
 
 template <typename T>
 concept bare_io_info =
     spt::info<T> and
     bare_io_impl<typename T::owner_type>;
+template <typename T>
+concept keyed_io_info =
+    spt::info<T> and
+    keyed_io_impl<typename T::owner_type>;
+template <typename T>
+concept io_info =
+    bare_io_info<T> or keyed_io_info<T>;
 
-void send(bare_io_impl auto& io_impl, auto&&... args) {
+void send(io_impl auto& io_impl, auto&&... args) {
     io_impl.send(std::forward<decltype(args)>(args)...);
 }
-void send(bare_io_info auto& io_info, auto&&... args) {
+void send(io_info auto& io_info, auto&&... args) {
     using io_info_type = std::remove_cvref_t<decltype(io_info)>;
     spt::multiton<io_info_type>::get(io_info).send(std::forward<decltype(args)>(args)...);
 }
 
-void register_callback(bare_io_impl auto& io_impl, spt::invocable_r<void> auto&& func) {
-    io_impl.register_callback(std::forward<decltype(func)>(func));
-}
-void register_callback(bare_io_info auto& io_info, spt::invocable_r<void> auto&& func) {
-    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
-    register_callback(spt::multiton<io_info_type>::get(io_info), std::forward<decltype(func)>(func));
-}
-
-auto get_rx_bytes(bare_io_impl auto& io_impl) {
+auto get_rx_bytes(io_impl auto& io_impl) {
     return io_impl.get_rx_bytes();
 }
-auto get_rx_bytes(bare_io_info auto& io_info) {
+auto get_rx_bytes(io_info auto& io_info) {
     using io_info_type = std::remove_cvref_t<decltype(io_info)>;
     return spt::multiton<io_info_type>::get(io_info).get_rx_bytes();
+}
+
+void register_callback(io_impl auto& io_impl, auto&&... args) {
+    io_impl.register_callback(std::forward<decltype(args)>(args)...);
+}
+void register_callback(io_info auto& io_info, auto&&... args) {
+    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
+    register_callback(spt::multiton<io_info_type>::get(io_info), std::forward<decltype(args)>(args)...);
+}
+
+void register_error_handler(io_impl auto& io_impl, auto&&... args) {
+    io_impl.register_error_handler(std::forward<decltype(args)>(args)...);
+}
+void register_error_handler(io_info auto& io_info, auto&&... args) {
+    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
+    register_error_handler(spt::multiton<io_info_type>::get(io_info), std::forward<decltype(args)>(args)...);
+}
+
+void error_handler(io_impl auto& io_impl, auto&&... args) {
+    io_impl.error_handler(std::forward<decltype(args)>(args)...);
+}
+void error_handler(io_info auto& io_info, auto&&... args) {
+    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
+    register_error_handler(spt::multiton<io_info_type>::get(io_info), std::forward<decltype(args)>(args)...);
 }
 
 class Fd {
@@ -97,7 +174,7 @@ public:
         }
     }
 
-    pollfd make_pollfd(short events) {
+    pollfd make_pollfd(short events = 0) {
         return { fd_, events, 0 };
     }
 };

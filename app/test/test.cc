@@ -7,7 +7,7 @@ using namespace robo::spt::byte_literals;
 constexpr auto context = robo::spt::thread_context::make();
 constexpr robo::io::Serial::Info serial {
     .name = "/dev/serial/by-id/usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00",
-    .context = context[0],
+    .context = context,
     .rx_idle_duration = 50us,
     .rx_buffer_size = 19,
     .baud_rate = 4000000
@@ -32,12 +32,14 @@ int main() {
         }
     };
 
+    robo::io::register_error_handler(serial, robo::io::allow_no_callback);
+
     robo::io::register_callback<robo::io::prefix_key<4>>(
         serial, key1, [&] { callback(key1); });
     robo::io::register_callback<robo::io::prefix_key<4>>(
         serial, key2, [&] { callback(key2); });
-    robo::io::register_callback(
-        serial, robo::io::prefix_key(key3), [&] { callback(key3); });
+    robo::io::register_callback<robo::io::prefix_key<4>>(
+        serial, key3, [&] { callback(key3); });
 
     auto send_task = [] {
         while (true) {

@@ -1,5 +1,4 @@
 export module robo:dev.motor;
 
-import std;
 export import :dev.motor.base;
 

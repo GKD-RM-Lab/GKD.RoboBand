@@ -25,7 +25,7 @@ public:
         [[nodiscard]]
         auto key() const { return id; }
         [[nodiscard]]
-        auto label() const { 
+        auto desc() const { 
             return std::format("thread context (id:{})", id);
         }
     };
@@ -52,6 +52,11 @@ public:
     void add_task(
         spt::invocable_r<void> auto&& task, 
         const std::chrono::nanoseconds& idle_duration = std::chrono::nanoseconds::max()) {
+        if (started_) {
+            throw std::logic_error{ 
+                "add a task to the already started thread_context " + std::to_string(info_.id) + "."
+            };
+        }
         tasks_.emplace_back(std::forward<decltype(task)>(task));
         info_.idle_duration = std::min(info_.idle_duration, idle_duration);
     }
@@ -88,12 +93,16 @@ namespace thread_context {
     using info = struct detail::thread_context_impl::info;
     auto& get = spt::multiton<info>::get;
 
-    template <std::size_t N = 1> requires (N > 0)
+    template <std::size_t N> requires (N > 1)
     [[nodiscard]]
     consteval auto make() -> std::array<info, N> {
         return []<std::size_t... I>(std::index_sequence<I...>) {
             return std::array<info, N>{ info{I}... };
         }(std::make_index_sequence<N>{});
+    }
+    [[nodiscard]]
+    consteval auto make() -> info {
+        return info{ 0 };
     }
     void start() {
         for (auto& [_, e] : multiton<info>::instances) {

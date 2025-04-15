@@ -14,6 +14,7 @@ namespace spt {
 //     multiton::get() -> owner
 //     owner.info()    -> info
 //     info.key()      -> key
+//     info.desc()     -> description
 ///////////////////////////////////////////
 template <typename T>
 concept info =
@@ -21,7 +22,7 @@ concept info =
         typename T::key_type;
         typename T::owner_type;
         { t.key() } -> std::same_as<typename T::key_type>;
-        { t.label() } -> std::same_as<std::string>;
+        { t.desc() } -> std::same_as<std::string>;
     };
 
 template <typename T>
@@ -40,6 +41,7 @@ struct multiton {
     using owner_type = typename T::owner_type;
     static_assert(std::same_as<info_type, typename owner_type::info_type>);
 
+    inline static std::mutex mutex_;
     inline static std::unordered_map<key_type, std::unique_ptr<owner_type>> instances {};
 
     multiton() = default;
@@ -49,10 +51,9 @@ struct multiton {
     multiton(multiton&&) = delete;
     multiton& operator=(multiton&&) = delete;
 
-    // NOT thread-safe. Instance modifications are confined to the 
-    // configuration phase (single-threaded), thus no synchronization used.
     [[nodiscard]]
     static auto get(const info_type& info) -> owner_type& {
+        std::lock_guard<std::mutex> lock { mutex_ };
         auto it = instances.find(info.key());
         if (it != instances.end()) {
             return *it->second;

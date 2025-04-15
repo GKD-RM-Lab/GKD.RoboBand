@@ -8,14 +8,12 @@ export namespace robo {
 namespace io {
 template <typename T>
 concept adaptor =
-    std::constructible_from<T, typename T::key_type> and
-    std::convertible_to<T, typename T::key_type> and
     requires() {
         { std::hash<typename T::key_type>{}(std::declval<typename T::key_type>()) }
             -> std::convertible_to<std::size_t>;
         { T::get_key(std::declval<std::span<const std::byte>>()) }
             -> std::same_as<std::optional<typename T::key_type>>;
-        { T::label() } -> std::same_as<std::string>;
+        { T::desc() } -> std::same_as<std::string>;
     };
 
 namespace detail {
@@ -24,8 +22,8 @@ class AdaptorImpl {
 public:
     struct Info : Io {
         using owner_type = AdaptorImpl;
-        auto label() const {
-            return std::format("{} (with adaptor {})", Io::label(), Adaptor::label());
+        auto desc() const {
+            return std::format("{} (with adaptor {})", Io::desc(), Adaptor::desc());
         }
     };
     using info_type = Info;
@@ -45,7 +43,7 @@ public:
         auto [_, success] = callbacks_.emplace(key, std::forward<decltype(func)>(func));
         if (not success) {
             throw std::logic_error{ 
-                "repeatedly register callback with a same key to " + info_.label()
+                "repeatedly register callback with a same key to " + info_.desc()
             };
         }
     }
@@ -54,12 +52,8 @@ private:
     void callback() {
         auto rx_bytes = spt::multiton<Io>::get(info_).get_rx_bytes();
         auto ret = Adaptor::get_key(rx_bytes);
-        if (not ret.has_value()) {
-            // TODO log
-            return;
-        }
-        if (not callbacks_.contains(ret.value())) {
-            // TODO log
+        if (not ret.has_value() or not callbacks_.contains(ret.value())) {
+            io::error_handler(spt::multiton<Io>::get(info_), io::error::invalid_data, info_.desc());
             return;
         }
         callbacks_[ret.value()]();
@@ -81,13 +75,6 @@ void register_callback(bare_io_impl auto& io_impl, auto key, spt::invocable_r<vo
     register_callback<Adaptor>(io_impl.info(), key, std::forward<decltype(func)>(func));
 }
 
-void register_callback(bare_io_info auto& io_info, adaptor auto adaptor, spt::invocable_r<void> auto&& func) {
-    register_callback<decltype(adaptor)>(io_info, adaptor, std::forward<decltype(func)>(func));
-}
-void register_callback(bare_io_impl auto& io_impl, adaptor auto adaptor, spt::invocable_r<void> auto&& func) {
-    register_callback<decltype(adaptor)>(io_impl, adaptor, std::forward<decltype(func)>(func));
-}
-
 template <std::size_t N = 1> requires (N > 0)
 struct prefix_key {
     using key_type = std::array<std::byte, N>;
@@ -97,16 +84,10 @@ struct prefix_key {
         std::ranges::copy(bytes.first<N>(), key.begin());
         return { key };
     }
-    static auto label() { 
+    static constexpr auto desc() { 
         return std::format("prefix_key<{}>", N);
     }
-
-    key_type key;
-    prefix_key(const key_type key) : key { key } {}    
-    operator key_type () const { return key; }
 };
-template <std::size_t N = 1> requires (N > 0)
-prefix_key(std::array<std::byte, N>) -> prefix_key<N>;
 
 template <>
 struct prefix_key<1> {
@@ -115,14 +96,8 @@ struct prefix_key<1> {
         if (bytes.size() <= 1) return std::nullopt;
         return { bytes[0] };
     }
-    static auto label() -> std::string { return "prefix_key<1>"; }
-
-    key_type key;
-    prefix_key(const key_type key) : key { key } {}    
-    operator key_type () const { return key; }
+    static constexpr auto desc() -> std::string { return "prefix_key<1>"; }
 };
-prefix_key(std::byte) -> prefix_key<1>;
-
 } // namespace io
 } // namespace robo
 
