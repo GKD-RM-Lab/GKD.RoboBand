@@ -86,8 +86,8 @@ public:
     auto info() const -> const info_type& { return info_; };
     [[nodiscard]]
     auto state() const { return state_; }
-    void register_callback(io_callback auto&& func);
-    void register_error_handler(io_error_handler_of<info_type> auto&& func);
+    void on_data(io::callback auto&& func);
+    void on_error(io::error_handler_of<info_type> auto&& func);
 
     template <typename T>
         requires std::is_trivially_copyable_v<T> and
@@ -287,7 +287,7 @@ SerialImpl::SerialImpl(const info_type& config) :
 ///////////////////////////////////////////
 // Serial: user interface
 ///////////////////////////////////////////
-void SerialImpl::register_callback(io_callback auto&& func) {
+void SerialImpl::on_data(io::callback auto&& func) {
     if (callback_) {
         throw std::logic_error{ 
             "repeatedly register callback to " + info_.desc()
@@ -296,7 +296,7 @@ void SerialImpl::register_callback(io_callback auto&& func) {
     callback_ = std::forward<decltype(func)>(func);
 }
 
-void SerialImpl::register_error_handler(io_error_handler_of<info_type> auto&& func) {
+void SerialImpl::on_error(io::error_handler_of<info_type> auto&& func) {
     if (error_handler_registed) {
         throw std::logic_error{ 
             "repeatedly register error handler to " + info_.desc()
@@ -468,12 +468,11 @@ void SerialImpl::task() {
         }
     }
 }
-static_assert(bare_io_impl<SerialImpl>);
 } // namespace detail
 
 namespace Serial {
-    using Info = detail::SerialImpl::info_type;
-    auto& get = spt::multiton::get<Info>;
+using Info = detail::SerialImpl::info_type;
+static_assert(io::bare_io<Info>);
 } // namespace Serial
 } // namespace io
 } // namespace robo

@@ -29,110 +29,80 @@ enum class error {
 };
 
 ///////////////////////////////////////////
+// core functions
+///////////////////////////////////////////
+decltype(auto) get(auto&& io) {
+    return spt::multiton::get(io);
+}
+void send(auto&& io, auto&&... args) {
+    io::get(io).send(std::forward<decltype(args)>(args)...);
+}
+void on_data(auto&& io, auto&&... args) {
+    io::get(io).on_data(std::forward<decltype(args)>(args)...);
+}
+void on_error(auto&& io, auto&&... args) {
+    io::get(io).on_error(std::forward<decltype(args)>(args)...);
+}
+void error_handler(auto&& io, const io::error err) {
+    io::get(io).error_handler(io, err);
+}
+
+///////////////////////////////////////////
 // concepts
-//     io : impl + info -> multiton
-//     io_base  : send(...) 
-//                error_handler(const io_info&, const io::error)
-//                register_error_handler(error_handler)
+//     io_base  : info
+//                io::get(info) -> impl
+//                io::error_handler(io, const io::error)
+//                io::on_error(io, error_handler)
 //     bare_io  : io_base
-//                register_callback(callback)
+//                io::on_data(io, callback)
 //     keyed_io : io_base
-//                register_callback(key, callback)
-//     * remark : callback(std::span<const std::byte>)
+//                io::on_data(io, key, callback)
+//     io       : bare_io or keyed_io
+//     /* `callback(std::span<const std::byte>)` */
+//     /* `error_handler(io, const io::error)` */
 ///////////////////////////////////////////
 template <typename T>
-concept io_impl_base =
-    spt::owner<T> and
-    requires(T t) {
-        { t.error_handler(std::declval<const typename T::info_type&>(), 
-                          std::declval<const io::error>()) } 
+concept io_base =
+    spt::info<std::remove_cvref_t<T>> and
+    requires(std::remove_cvref_t<T> io) {
+        { io::on_error(io, [](const T&, const io::error) {}) }
             -> std::same_as<void>;
-        { t.register_error_handler([](const typename T::info_type&, const io::error) {}) }
-            -> std::same_as<void>;
-    };
-template <typename T>
-concept bare_io_impl =
-    io_impl_base<T> and
-    requires(T t) {
-        { t.register_callback([](std::span<const std::byte>) {}) } 
+        { io::error_handler(io, std::declval<const io::error>()) }
             -> std::same_as<void>;
     };
 template <typename T>
-concept keyed_io_impl =
-    io_impl_base<T> and
-    requires(T t) {
-        { t.register_callback(std::declval<typename T::io_key_type>(), 
-                              [](std::span<const std::byte>) {}) } 
+concept bare_io =
+    io_base<T> and
+    requires(std::remove_cvref_t<T> io) {
+        { io::on_data(io, [](std::span<const std::byte>) {}) }
             -> std::same_as<void>;
     };
 template <typename T>
-concept io_impl =
-    bare_io_impl<T> or 
-    keyed_io_impl<T>;
+concept keyed_io =
+    io_base<T> and
+    requires(std::remove_cvref_t<T> io) {
+        { io::on_data(io, 
+                      std::declval<typename T::owner_type::io_key_type>(), 
+                      [](std::span<const std::byte>) {}) }
+            -> std::same_as<void>;
+    };
+template <typename T>
+concept io =
+    bare_io<T> or 
+    keyed_io<T>;
 
 template <typename T>
-concept bare_io_info =
-    spt::info<T> and
-    bare_io_impl<typename T::owner_type>;
-template <typename T>
-concept keyed_io_info =
-    spt::info<T> and
-    keyed_io_impl<typename T::owner_type>;
-template <typename T>
-concept io_info =
-    bare_io_info<T> or 
-    keyed_io_info<T>;
-
-template <typename T>
-concept io_callback = 
+concept callback = 
     spt::invocable_r<T, void, std::span<const std::byte>>;
 template <typename T, typename Io>
-concept io_error_handler_of = 
+concept error_handler_of = 
     spt::invocable_r<T, void, const Io&,  const io::error>;
-
-///////////////////////////////////////////
-// core functions
-//     <io> : io_impl or io_info
-//     io::send(<io>, ...)
-//     io::register_callback(<io>, ...)
-//     io::register_error_handler(<io>, ...)
-//     io::error_handler(<io>, io::error)
-///////////////////////////////////////////
-void send(io_impl auto& io_impl, auto&&... args) {
-    io_impl.send(std::forward<decltype(args)>(args)...);
-}
-void send(const io_info auto& io_info, auto&&... args) {
-    spt::multiton::get(io_info).send(std::forward<decltype(args)>(args)...);
-}
-
-void register_callback(io_impl auto& io_impl, auto&&... args) {
-    io_impl.register_callback(std::forward<decltype(args)>(args)...);
-}
-void register_callback(const io_info auto& io_info, auto&&... args) {
-    register_callback(spt::multiton::get(io_info), 
-                      std::forward<decltype(args)>(args)...);
-}
-
-void register_error_handler(io_impl auto& io_impl, auto&&... args) {
-    io_impl.register_error_handler(std::forward<decltype(args)>(args)...);
-}
-void register_error_handler(const io_info auto& io_info, auto&&... args) {
-    register_error_handler(spt::multiton::get(io_info), 
-                           std::forward<decltype(args)>(args)...);
-}
-
-void error_handler(io_impl auto& io_impl, const io::error err) {
-    io_impl.error_handler(io_impl.info(), err);
-}
-void error_handler(const io_info auto& io_info, const io::error err) {
-    spt::multiton::get(io_info).error_handler(io_info, err);
-}
 
 ///////////////////////////////////////////
 // helpers
 ///////////////////////////////////////////
 struct default_error_handler {
-    static void operator()(const auto& io_info, const io::error err) {
+    static void operator()(auto&& io, const io::error err) {
         switch (err) {
             using enum io::error;
             case error::offline:
@@ -141,23 +111,23 @@ struct default_error_handler {
                 break;
             case error::callback_unregistered:
                 throw std::logic_error{
-                    "no callback registered to " + io_info.desc()
+                    "no callback registered to " + io.desc()
                 };
             case error::read_failed:
                 throw std::system_error { errno, std::system_category(), 
-                    "read failed on " + io_info.desc()
+                    "read failed on " + io.desc()
                 };
             case error::write_failed: break;
                 throw std::system_error { errno, std::system_category(), 
-                    "write failed on " + io_info.desc()
+                    "write failed on " + io.desc()
                 };
         }
     }
 };
 struct allow_no_callback {
-    static void operator()(const auto& io_info, const io::error err) {
+    static void operator()(auto&& io, const io::error err) {
         if (err != robo::io::error::callback_unregistered) {
-            robo::io::default_error_handler{}(io_info, err);
+            robo::io::default_error_handler{}(io, err);
         }
     };
 };

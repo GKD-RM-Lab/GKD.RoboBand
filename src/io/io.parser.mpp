@@ -7,7 +7,10 @@ import :io.base;
 export namespace robo {
 namespace io {
 ///////////////////////////////////////////
-// TODO comments
+// concepts
+//     keyed_parser : key_type /* hashable */ 
+//                    get_key(bytes) -> key_type
+//     bare_parser  : test() -> bool
 ///////////////////////////////////////////
 template <typename T>
 concept keyed_parser =
@@ -18,9 +21,18 @@ concept keyed_parser =
             -> std::same_as<std::optional<typename T::key_type>>;
         { T::desc() } -> std::same_as<std::string>;
     };
+template <typename T>
+concept bare_parser = 
+    requires() {
+        { T::test(std::declval<std::span<const std::byte>>()) }
+            -> std::same_as<bool>;
+    };
 
+///////////////////////////////////////////
+// implementation details (keyed_parser)
+///////////////////////////////////////////
 namespace detail {
-template <keyed_parser P, bare_io_info Io>
+template <io::keyed_parser P, io::bare_io Io>
 class KeyedParserImpl {
 public:
     struct Info : Io {
@@ -38,12 +50,13 @@ private:
 
 public:
     KeyedParserImpl(const Info& info) : info_ { info } {
-        io::register_callback(static_cast<const Io&>(info), [this](auto bytes) { this->callback(bytes); });      
+        io::on_data(static_cast<const Io&>(info), 
+                              [this](auto bytes) { this->callback(bytes); });      
     }
 
     [[nodiscard]]
     auto info() const -> const Info& { return info_; };
-    void register_callback(parser_key_type key, io_callback auto&& func) {
+    void on_data(parser_key_type key, io::callback auto&& func) {
         auto [_, success] = callbacks_.emplace(key, std::forward<decltype(func)>(func));
         if (not success) {
             throw std::logic_error{ 
@@ -56,7 +69,7 @@ private:
     void callback(auto rx_bytes) {
         auto ret = P::get_key(rx_bytes);
         if (not ret.has_value() or not callbacks_.contains(ret.value())) {
-            io::error_handler(static_cast<Io>(info_), io::error::invalid_data);
+            io::error_handler(static_cast<const Io&>(info_), io::error::invalid_data);
             return;
         }
         callbacks_[ret.value()](rx_bytes);
@@ -64,39 +77,54 @@ private:
 };
 } // namespace detail
 
-template <spt::instance_of<detail::KeyedParserImpl> P>
-void register_callback(P& p_impl,
-                       std::convertible_to<typename P::parser_key_type> auto key, 
-                       io_callback auto&& func) {
-    p_impl.register_callback(key, std::forward<decltype(func)>(func));
-}
-template <typename P>
-    requires spt::instance_of<typename P::owner_type, detail::KeyedParserImpl>
-void register_callback(const P& p_info,  
-                       std::convertible_to<typename P::owner_type::parser_key_type> auto key, 
-                       io_callback auto&& func) {
-    spt::multiton::get(p_info) .register_callback(key, std::forward<decltype(func)>(func));
-}
+///////////////////////////////////////////
+// with_parser
+//     io::with_parser<bare_parser...>::on_date(...)
+//     io::with_parser<keyed_parser>::on_date(...)
+//     io::with_parser<keyed_parser, bare_parser...>::on_date(...)
+///////////////////////////////////////////
+template <typename...>
+struct with_parser;
+template <io::bare_parser... Ps> requires (sizeof...(Ps) > 0)
+struct with_parser<Ps...> {
+    static void on_data(io::io auto&& info, io::callback auto&& func) {
+        io::on_data(info, [&info, func = std::forward<decltype(func)>(func)](auto bytes) { 
+            if ((Ps::test(bytes) and ...)) {
+                func(bytes);
+            } else {
+                io::error_handler(info, io::error::invalid_data);
+            }
+        });
+    }
+};
+template <io::keyed_parser P>
+struct with_parser<P> {
+    static void on_data(io::bare_io auto&& io, auto key, io::callback auto&& func) {
+        using io_type = std::remove_cvref_t<decltype(io)>;
+        using parser_type = typename detail::KeyedParserImpl<P, io_type>::info_type;
+        spt::multiton::get(static_cast<const parser_type&>(io))
+            .on_data(key, std::forward<decltype(func)>(func));
+    }
+};
+template <io::keyed_parser P, io::bare_parser... Ps> requires (sizeof...(Ps) > 0)
+struct with_parser<P, Ps...> {
+    static void on_data(io::bare_io auto&& io, auto key, io::callback auto&& func) {
+        io::with_parser<P>::on_data(io, key, 
+                                    [&io, func = std::forward<decltype(func)>(func)](auto bytes) { 
+            if ((Ps::test(bytes) and ...)) {
+                func(bytes);
+            } else {
+                io::error_handler(io, io::error::invalid_data);
+            }
+        });
+    }
+};
 
-template <keyed_parser P>
-void register_callback(const bare_io_info auto& io_info, 
-                       std::convertible_to<typename P::key_type> auto key, 
-                       auto&&... args) {
-    using io_info_type = std::remove_cvref_t<decltype(io_info)>;
-    using parser_info_type = typename detail::KeyedParserImpl<P, io_info_type>::info_type;
-    io::register_callback(static_cast<const parser_info_type&>(io_info), 
-                          key, 
-                          std::forward<decltype(args)>(args)...);
-}
-template <keyed_parser P>
-void register_callback(bare_io_impl auto& io_impl,
-                       std::convertible_to<typename P::key_type> auto key, 
-                       auto&&... args) {
-    register_callback<P>(io_impl.info(), key, std::forward<decltype(args)>(args)...);
-}
-
+///////////////////////////////////////////
+// parsers
+///////////////////////////////////////////
 template <std::size_t N = 1> requires (N > 0)
-struct prefix_key {
+struct prefix {
     using key_type = std::array<std::byte, N>;
     static auto get_key(std::span<const std::byte> bytes) -> std::optional<key_type> {
         if (bytes.size() <= N) return std::nullopt;
@@ -110,7 +138,7 @@ struct prefix_key {
 };
 
 template <>
-struct prefix_key<1> {
+struct prefix<1> {
     using key_type = std::byte;
     static auto get_key(std::span<const std::byte> bytes) -> std::optional<key_type> {
         if (bytes.size() <= 1) return std::nullopt;
@@ -119,19 +147,19 @@ struct prefix_key<1> {
     static constexpr auto desc() -> std::string { return "prefix_key<1>"; }
 };
 
-decltype(auto) crc(io_callback auto&& func) {
-    return [func = std::forward<decltype(func)>(func)](auto bytes) { 
-        if (true) {
-            func(bytes);
-        } else {
-            // TODO io::error_handler();
-        }
-    };
-}
+struct crc {
+    static bool test(std::span<const std::byte> bytes) {
+        // TODO
+        return true;
+    }
+};
 } // namespace io
 } // namespace robo
 
-export template<std::size_t N> requires (N > 1)
+///////////////////////////////////////////
+// custom hash
+///////////////////////////////////////////
+template<std::size_t N> requires (N > 1)
 struct std::hash<std::array<std::byte, N>>
 {
     std::size_t operator()(const std::array<std::byte, N>& bytes) const noexcept

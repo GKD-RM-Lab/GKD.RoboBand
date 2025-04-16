@@ -31,13 +31,13 @@ int main() {
         }
     };
 
-    robo::io::register_error_handler(serial, robo::io::allow_no_callback{});
+    robo::io::on_error(serial, robo::io::allow_no_callback{});
 
-    robo::io::register_callback<robo::io::prefix_key<4>>(
+    robo::io::with_parser<robo::io::prefix<4>, robo::io::crc>::on_data(
         serial, key1, [&](auto bytes) { callback(key1, bytes); });
-    robo::io::register_callback<robo::io::prefix_key<4>>(
+    robo::io::with_parser<robo::io::prefix<4>, robo::io::crc>::on_data(
         serial, key2, [&](auto bytes) { callback(key2, bytes); });
-    robo::io::register_callback<robo::io::prefix_key<4>>(
+    robo::io::with_parser<robo::io::prefix<4>, robo::io::crc>::on_data(
         serial, key3, [&](auto bytes) { callback(key3, bytes); });
 
     auto send_task = [] {
