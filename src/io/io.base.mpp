@@ -31,6 +31,7 @@ enum class error {
 ///////////////////////////////////////////
 // core functions
 ///////////////////////////////////////////
+[[nodiscard]]
 decltype(auto) get(auto&& io) {
     return spt::multiton::get(io);
 }

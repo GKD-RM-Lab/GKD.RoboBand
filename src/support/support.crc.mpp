@@ -1,0 +1,214 @@
+module;
+
+#include <cstdint>
+
+export module robo:support.crc;
+
+import std;
+namespace stdr = std::ranges;
+
+export namespace robo {
+namespace spt {
+namespace crc {
+///////////////////////////////////////////
+// concept & param
+///////////////////////////////////////////
+template <typename T>
+concept calc_type =
+    std::same_as<T, std::uint8_t> or
+    std::same_as<T, std::uint16_t> or
+    std::same_as<T, std::uint32_t> or
+    std::same_as<T, std::uint64_t>;
+
+template <crc::calc_type I, std::size_t N>
+struct param {
+    using calc_type = I;
+    static constexpr auto calc_width = N;
+    I polynomial;
+    I initial_value;
+    I final_XOR;
+    bool reflect_input;
+    bool reflect_output;
+    I check_value;
+};
+
+namespace detail {
+template <typename T, template <crc::calc_type, std::size_t> class P>
+struct algo_impl : std::false_type {};
+template <template <crc::calc_type, std::size_t> class T, crc::calc_type I, std::size_t N>
+struct algo_impl<T<I, N>, T> : std::true_type {};
+} // namespace detail
+template <typename T>
+concept algo = 
+    detail::algo_impl<T, param>::value;
+
+///////////////////////////////////////////
+// implementation details (table & calc)
+///////////////////////////////////////////
+namespace detail {
+template <typename T>
+concept byte_range =
+    stdr::input_range<T> and
+    std::is_trivially_copyable_v<stdr::range_value_t<T>> and
+    (sizeof(stdr::range_value_t<T>) == 1) and (
+    std::convertible_to<stdr::range_value_t<T>, uint8_t> or
+    std::same_as<stdr::range_value_t<T>, std::byte>);
+
+// TODO [reflect] [BUG when width == 32]
+template <crc::algo auto Param>
+constexpr auto table = [] {
+    using algo_type = std::remove_cvref_t<decltype(Param)>;
+    using calc_type = typename algo_type::calc_type;
+    constexpr auto calc_width = algo_type::calc_width;
+
+    std::array<calc_type, 256> crc_table {};
+
+    for (std::size_t i = 0; i < 256; ++i) {
+        calc_type entry = static_cast<calc_type>(i << (calc_width - 8));
+
+        for (std::size_t j = 0; j < 8; ++j) {
+            const bool top_bit = entry & (static_cast<calc_type>(1u) << (calc_width - 1u));
+            entry <<= static_cast<calc_type>(1u);
+            if (top_bit) entry ^= Param.polynomial;
+        }
+
+        crc_table[i] = entry & ((static_cast<calc_type>(1u) << calc_width) - static_cast<calc_type>(1u));
+    }
+    
+    return crc_table;
+}();
+
+template <crc::algo auto Param>
+struct calc_impl_t {
+    static constexpr auto operator()(detail::byte_range auto&& range) {
+        using calc_type = typename decltype(Param)::calc_type;
+        constexpr auto calc_width = decltype(Param)::calc_width;
+
+        calc_type crc = Param.initial_value;
+
+        for (auto it = stdr::begin(range); it != stdr::end(range); ++it) {
+            std::uint8_t byte = std::to_integer<std::uint8_t>(static_cast<std::byte>(*it));
+            std::uint8_t index = (crc >> (calc_width - 8u)) ^ byte;
+            crc = static_cast<calc_type>((crc << static_cast<calc_type>(8u)) ^ detail::table<Param>[index]);
+            crc &= static_cast<calc_type>((static_cast<calc_type>(1u) << calc_width) - 1u);
+        }
+
+        crc ^= Param.final_XOR;
+
+        return crc;
+    }
+};
+template <crc::algo auto Param>
+calc_impl_t<Param> calc_impl;
+} // namespace detail
+
+///////////////////////////////////////////
+// user interface
+///////////////////////////////////////////
+template <crc::algo auto Param>
+constexpr auto calc(detail::byte_range auto&& range) {
+    return detail::calc_impl<Param>(range);
+}
+
+template <crc::algo auto Param>
+constexpr auto calc(stdr::input_range auto&& range) 
+    requires (not detail::byte_range<decltype(range)>) and
+        std::is_trivially_copyable_v<stdr::range_value_t<decltype(range)>> {
+    std::span<const std::byte> view {
+        reinterpret_cast<const std::byte*>(stdr::data(range)),
+        stdr::size(range) * sizeof(stdr::range_value_t<decltype(range)>)
+    };
+    return calc<Param>(view);
+}
+
+template <crc::algo auto Param>
+constexpr auto calc(std::input_iterator auto begin, std::input_iterator auto end) {
+    return calc<Param>(stdr::subrange(begin, end));
+}
+
+template <crc::algo auto Param>
+constexpr auto calc(std::input_iterator auto begin, std::size_t size) {
+    return calc<Param>(stdr::subrange(begin, begin + size));
+}
+
+template <crc::algo auto Param>
+consteval bool check() {
+    return crc::calc<Param>(std::string_view{"123456789"}) == Param.check_value;
+}
+} // namespace crc
+
+///////////////////////////////////////////
+// crc algorithms
+///////////////////////////////////////////
+namespace crc8 {
+// constexpr crc::param<std::uint8_t, 8> maxim {
+//     0x31, 0x00, 0x00, true, true, 0xa1
+// }; static_assert(crc::check<crc8::maxim>());
+constexpr crc::param<std::uint8_t, 8> ccitt {
+    0x07, 0x00, 0x00, false, false, 0xf4
+}; static_assert(crc::check<crc8::ccitt>());
+constexpr crc::param<std::uint8_t, 8> lte {
+    0x9b, 0x00, 0x00, false, false, 0xea
+}; static_assert(crc::check<crc8::lte>());
+} // namespace crc8
+
+namespace crc16 {
+constexpr crc::param<std::uint16_t, 16> dm_imu {
+    0x1021, 0xffff, 0x0000, false, false, 0x5f16
+};
+constexpr crc::param<std::uint16_t, 16> ccitt_false {
+    0x1021, 0xffff, 0x0000, false, false, 0x29b1
+}; static_assert(crc::check<crc16::ccitt_false>());
+// constexpr crc::param<std::uint16_t, 16> modbus {
+//     0x8005, 0xffff, 0x0000, true, true, 0x4b37
+// }; static_assert(crc::check<crc16::modbus>());
+// constexpr crc::param<std::uint16_t, 16> xmodem {
+//     0x1021, 0x0000, 0x0000, false, false, 0x31c3
+// }; static_assert(crc::check<crc16::xmodem>());
+// constexpr crc::param<std::uint16_t, 16> kermit {
+//     0x1021, 0x0000, 0x0000, true, true, 0x2189
+// }; static_assert(crc::check<crc16::kermit>());
+// constexpr crc::param<std::uint16_t, 16> ibm {
+//     0x8005, 0x0000, 0xffff, true, true, 0xbb3d
+// }; static_assert(crc::check<crc16::ibm>());
+} // namespace crc16
+
+// namespace crc32 {
+// constexpr crc::param<std::uint32_t, 32> standard {
+//     0x04c11db7, 0xffffffff, 0xffffffff, true, true, 0xcbf43926
+// }; static_assert(crc::check<crc32::standard>());
+// constexpr crc::param<std::uint32_t, 32> castagnoli {
+//     0x1edc6f41, 0xffffffff, 0xffffffff, true, true, 0xe3069283
+// }; static_assert(crc::check<crc32::castagnoli>());
+// constexpr crc::param<std::uint32_t, 32> koopman {
+//     0x741b8cd7, 0xffffffff, 0x00000000, true, true, 0x2d3dd0ae
+// }; static_assert(crc::check<crc32::koopman>());
+// constexpr crc::param<std::uint32_t, 32> jams {
+//     0x04c11db7, 0xffffffff, 0x00000000, true, true, 0x340bc6d9
+// }; static_assert(crc::check<crc32::jams>());
+// } // namespace crc32
+
+///////////////////////////////////////////
+// specialization for crc algorithms
+///////////////////////////////////////////
+template <>
+struct crc::detail::calc_impl_t<crc16::dm_imu> {
+    constexpr auto operator()(crc::detail::byte_range auto&& range) {
+        static constexpr auto& Param { crc16::dm_imu };
+        using algo_type = std::remove_cvref_t<decltype(Param)>;
+        using calc_type = typename algo_type::calc_type;
+        constexpr auto calc_width = algo_type::calc_width;
+
+        calc_type crc = crc16::dm_imu.initial_value;
+        for (auto it = stdr::begin(range); it != stdr::end(range); ++it) {
+            std::uint8_t byte = std::to_integer<std::uint8_t>(static_cast<std::byte>(*it));
+            std::uint8_t index = (crc >> (calc_width - 8u)) ^ byte;
+            crc = static_cast<calc_type>((crc << 1u) ^ crc::detail::table<Param>[index & 0xff]);
+        }
+
+        return crc;
+    } 
+}; static_assert(crc::check<crc16::dm_imu>());
+} // namespace spt
+} // namespace robo
+

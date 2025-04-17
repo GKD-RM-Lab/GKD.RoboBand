@@ -3,6 +3,7 @@ export module robo:io.parser;
 import std;
 import :support;
 import :io.base;
+namespace stdr = std::ranges;
 
 export namespace robo {
 namespace io {
@@ -33,10 +34,10 @@ concept bare_parser =
 ///////////////////////////////////////////
 namespace detail {
 template <io::keyed_parser P, io::bare_io Io>
-class KeyedParserImpl {
+class keyed_parser_impl {
 public:
     struct Info : Io {
-        using owner_type = KeyedParserImpl;
+        using owner_type = keyed_parser_impl;
         auto desc() const {
             return std::format("{} (with parser {})", Io::desc(), P::desc());
         }
@@ -49,7 +50,7 @@ private:
     std::unordered_map<parser_key_type, std::function<void(std::span<const std::byte>)>> callbacks_;
 
 public:
-    KeyedParserImpl(const Info& info) : info_ { info } {
+    keyed_parser_impl(const Info& info) : info_ { info } {
         io::on_data(static_cast<const Io&>(info), 
                               [this](auto bytes) { this->callback(bytes); });      
     }
@@ -101,7 +102,7 @@ template <io::keyed_parser P>
 struct with_parser<P> {
     static void on_data(io::bare_io auto&& io, auto key, io::callback auto&& func) {
         using io_type = std::remove_cvref_t<decltype(io)>;
-        using parser_type = typename detail::KeyedParserImpl<P, io_type>::info_type;
+        using parser_type = typename detail::keyed_parser_impl<P, io_type>::info_type;
         spt::multiton::get(static_cast<const parser_type&>(io))
             .on_data(key, std::forward<decltype(func)>(func));
     }
@@ -129,7 +130,7 @@ struct prefix {
     static auto get_key(std::span<const std::byte> bytes) -> std::optional<key_type> {
         if (bytes.size() <= N) return std::nullopt;
         key_type key;
-        std::ranges::copy(bytes.first<N>(), key.begin());
+        stdr::copy(bytes.first<N>(), key.begin());
         return { key };
     }
     static constexpr auto desc() { 
@@ -147,10 +148,43 @@ struct prefix<1> {
     static constexpr auto desc() -> std::string { return "prefix_key<1>"; }
 };
 
+template <auto... Args> requires (sizeof...(Args) > 0)
+struct head {
+    static bool test(std::span<const std::byte> bytes) {
+        static constexpr std::size_t N = sizeof...(Args);
+        return (bytes.size() > N) and stdr::equal(std::array{std::byte{Args}...}, bytes.first(N));
+    }
+};
+
+template <auto... Args> requires (sizeof...(Args) > 0)
+struct tail {
+    static bool test(std::span<const std::byte> bytes) {
+        static constexpr std::size_t N = sizeof...(Args);
+        return (bytes.size() > N) and stdr::equal(std::array{std::byte{Args}...}, bytes.last(N));
+    }
+};
+
+template <std::size_t N> requires (N > 0)
+struct length {
+    static bool test(std::span<const std::byte> bytes) {
+        return bytes.size() == N;
+    }
+};
+
+template <spt::crc::algo auto Param, std::size_t First = 0, std::size_t Last = 0>
 struct crc {
     static bool test(std::span<const std::byte> bytes) {
-        // TODO
-        return true;
+        static constexpr std::size_t crc_bytes_num { Param.calc_width / 8 };
+        if (bytes.size() - First - Last <= crc_bytes_num) return false;
+
+        const auto last_offset = static_cast<std::ptrdiff_t>(bytes.size() - Last - crc_bytes_num);
+        const auto ret = spt::crc::calc<Param>(bytes.begin() + First, 
+                                               bytes.begin() + last_offset);
+        if (ret == *reinterpret_cast<decltype(ret)*>(bytes.data() + last_offset)) {
+            return true;
+        } else {
+            return false;
+        }
     }
 };
 } // namespace io

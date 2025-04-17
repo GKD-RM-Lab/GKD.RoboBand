@@ -42,8 +42,8 @@ struct multiton_impl {
     using owner_type = typename T::owner_type;
     static_assert(std::same_as<info_type, typename owner_type::info_type>);
 
-    inline static std::mutex mutex_;
-    inline static std::unordered_map<key_type, std::unique_ptr<owner_type>> instances {};
+    static std::mutex mutex_;
+    static std::unordered_map<key_type, std::unique_ptr<owner_type>> instances;
 
     multiton_impl() = default;
     ~multiton_impl() = default;
@@ -66,14 +66,25 @@ struct multiton_impl {
         return ret;
     };
 };
+
+template <info T>
+std::mutex multiton_impl<T>::mutex_ {};
+template <info T>
+std::unordered_map<
+    typename multiton_impl<T>::key_type, 
+    std::unique_ptr<typename multiton_impl<T>::owner_type>
+> multiton_impl<T>::instances {};
 } // namespace detail
 
 namespace multiton {
+[[nodiscard]]
 auto& get(const info auto& info) {
     using info_type = std::remove_cvref_t<decltype(info)>;
     return spt::detail::multiton_impl<info_type>::get(info);
 };
+
 template <info T>
+[[nodiscard]]
 auto& instances() {
     using info_type = std::remove_cvref_t<T>;
     return spt::detail::multiton_impl<info_type>::instances;

@@ -3,6 +3,7 @@ export module robo:support.context;
 import std;
 import :support.misc;
 import :support.multiton;
+namespace stdv = std::views;
 
 export namespace robo {
 namespace spt {
@@ -91,6 +92,8 @@ private:
 
 namespace thread_context {
 using info = struct detail::thread_context_impl::info;
+static_assert(spt::info<info>);
+
 auto& get = spt::multiton::get<info>;
 
 template <std::size_t N> requires (N > 1)
@@ -104,8 +107,9 @@ consteval auto make() -> std::array<info, N> {
 consteval auto make() -> info {
     return info{ 0 };
 }
+
 void start() {
-    for (auto& [_, e] : spt::multiton::instances<info>()) {
+    for (auto& e : stdv::values(spt::multiton::instances<info>())) {
         e->start();
     }
 }
