@@ -1,12 +1,14 @@
-add_rules("plugin.compile_commands.autoupdate", { outputdir = "build" })
+set_defaultmode("debug")
 add_rules("mode.debug")
 add_rules("mode.releasedbg")
 add_rules("mode.release")
 
+set_toolchains("llvm")
+set_runtimes("c++_shared")
 set_policy("build.warning", true)
 set_warnings("allextra", "pedantic")
 add_cxxflags("-fexperimental-library")
--- set_optimize("fastest");
+add_rules("plugin.compile_commands.autoupdate", { outputdir = "build" })
 
 if is_mode("debug") then
     add_cxxflags("-ftrapv")

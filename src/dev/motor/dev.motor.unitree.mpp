@@ -1,0 +1,11 @@
+export module robo:dev.motor.unitree;
+
+import std;
+import :dev.motor.base;
+
+export namespace robo {
+namespace dev {
+
+} // namespace dev
+} // namespace robo
+

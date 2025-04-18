@@ -1,0 +1,40 @@
+export module robo:dev.base;
+
+import std;
+import :support;
+
+export namespace robo {
+namespace dev {
+enum class state {
+    uninitialized,
+    offline,
+    error,
+    working,
+};
+
+struct Dev :
+    public spt::immovable_base, 
+    public spt::not_copyable_base {
+protected:
+    mutable dev::state state_;
+    std::chrono::steady_clock::time_point tick_time_ { std::chrono::steady_clock::now() };
+    const std::chrono::nanoseconds offline_duration_;
+
+public:
+    Dev(const std::chrono::nanoseconds offline_duration) : offline_duration_ { offline_duration } {}
+
+    auto state() const {
+        if (state_ == dev::state::working and
+            std::chrono::steady_clock::now() - tick_time_ > offline_duration_) {
+            state_ = dev::state::offline;
+        }
+        return state_; 
+    }
+    void tick() {
+        tick_time_ = std::chrono::steady_clock::now();
+        if (state_ == dev::state::offline) state_ = dev::state::working;
+    }
+};
+} // namespace dev
+} // namespace robo
+

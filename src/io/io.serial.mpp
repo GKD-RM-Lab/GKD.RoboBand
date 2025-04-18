@@ -18,7 +18,7 @@ namespace detail {
 ///////////////////////////////////////////
 // Serial: class definition
 ///////////////////////////////////////////
-class SerialImpl :
+class SerialImpl final :
     public spt::immovable_base, 
     public spt::not_copyable_base {
 public:
@@ -73,7 +73,7 @@ private:
     std::function<void(std::span<const std::byte>)> callback_ { nullptr };
 public:
     std::function<void(const info_type&, const io::error)> error_handler {
-        io::default_error_handler {}
+        io::default_error_handler
     };
 
 public:

@@ -1,20 +1,28 @@
 export module robo:dev.motor.base;
 
 import std;
+import :dev.base;
 
 export namespace robo {
 namespace dev {
-struct Motor {
-    float angle { 0.0f };
-    float speed { 0.0f };
-    virtual void setTorque(float torque) = 0;
+struct Motor : public Dev {
+protected:
+    float angle_ { 0.0f };
+    float speed_ { 0.0f };
 
-    Motor() = default;
+public:
+    using Dev::Dev;
+
+    auto angle() const { return angle_; }
+    auto speed() const { return speed_; }
 };
 
 template <typename T>
 concept motor =
-    std::derived_from<T, Motor>;
+    std::derived_from<T, Motor> and
+    requires(T t) {
+        { t.setTorque(std::declval<float>()) } -> std::same_as<void>;
+    };
 
 } // namespace dev
 } // namespace robo

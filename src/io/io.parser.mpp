@@ -80,9 +80,9 @@ private:
 
 ///////////////////////////////////////////
 // with_parser
-//     io::with_parser<bare_parser...>::on_date(...)
-//     io::with_parser<keyed_parser>::on_date(...)
-//     io::with_parser<keyed_parser, bare_parser...>::on_date(...)
+//     io::with_parser<bare_parser...>::on_data(...)
+//     io::with_parser<keyed_parser>::on_data(...)
+//     io::with_parser<keyed_parser, bare_parser...>::on_data(...)
 ///////////////////////////////////////////
 template <typename...>
 struct with_parser;

@@ -35,6 +35,9 @@ enum class error {
 decltype(auto) get(auto&& io) {
     return spt::multiton::get(io);
 }
+auto get_state(auto&& io) {
+    return io::get(io).state();
+}
 void send(auto&& io, auto&&... args) {
     io::get(io).send(std::forward<decltype(args)>(args)...);
 }
@@ -66,6 +69,8 @@ template <typename T>
 concept io_base =
     spt::info<std::remove_cvref_t<T>> and
     requires(std::remove_cvref_t<T> io) {
+        { io::get(io) };
+        { io::get_state(io) } -> std::same_as<io::state>;
         { io::on_error(io, [](const T&, const io::error) {}) }
             -> std::same_as<void>;
         { io::error_handler(io, std::declval<const io::error>()) }
@@ -102,7 +107,8 @@ concept error_handler_of =
 ///////////////////////////////////////////
 // helpers
 ///////////////////////////////////////////
-struct default_error_handler {
+namespace detail {
+struct default_error_handler_impl {
     static void operator()(auto&& io, const io::error err) {
         switch (err) {
             using enum io::error;
@@ -118,20 +124,23 @@ struct default_error_handler {
                 throw std::system_error { errno, std::system_category(), 
                     "read failed on " + io.desc()
                 };
-            case error::write_failed: break;
+            case error::write_failed:
                 throw std::system_error { errno, std::system_category(), 
                     "write failed on " + io.desc()
                 };
         }
     }
 };
-struct allow_no_callback {
+struct allow_no_callback_impl {
     static void operator()(auto&& io, const io::error err) {
         if (err != robo::io::error::callback_unregistered) {
-            robo::io::default_error_handler{}(io, err);
+            default_error_handler_impl{}(io, err);
         }
     };
 };
+} // namespace detail
+constexpr detail::default_error_handler_impl default_error_handler;
+constexpr detail::allow_no_callback_impl allow_no_callback;
 
 class Fd {
 private:

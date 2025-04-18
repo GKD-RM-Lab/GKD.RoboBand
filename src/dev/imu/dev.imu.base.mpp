@@ -1,16 +1,27 @@
 export module robo:dev.imu.base;
 
 import std;
+import :dev.base;
 
 export namespace robo {
 namespace dev {
-struct Imu {
+struct Imu : public Dev {
+protected:
+    std::array<float, 3> acc_ {};
+    std::array<float, 3> gyro_ {};
+    std::array<float, 3> angle_ {};
+
+public:
+    using Dev::Dev;
+
+    auto acc() const { return std::span{ acc_ }; }
+    auto gyro() const { return std::span{ gyro_ }; }
+    auto angle() const { return std::span{ angle_ }; }
 };
 
 template <typename T>
 concept imu =
     std::derived_from<T, Imu>;
-
 } // namespace dev
 } // namespace robo
 

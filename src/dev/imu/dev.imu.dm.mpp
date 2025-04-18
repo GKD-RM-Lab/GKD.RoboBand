@@ -1,0 +1,60 @@
+export module robo:dev.imu.dm;
+
+import std;
+import :dev.base;
+import :dev.imu.base;
+import :io;
+import :support;
+using namespace std::chrono_literals;
+using namespace robo::spt::byte_literals;
+namespace stdr = std::ranges;
+namespace stdv = std::views;
+
+export namespace robo {
+namespace imu {
+class Dm final : public dev::Imu {
+public:
+    using io_type = io::Serial::Info;
+    struct Info {
+        using dev_type = Dm;
+        const io_type& io;
+        // TODO install_angle
+    };
+
+private:
+    const io_type& io_;
+    
+public:
+    Dm(const Info& info) : dev::Imu { 10ms }, io_ { info.io } {
+        using IoParser = io::with_parser<io::prefix<4>,
+                                         io::tail<0x0a>,
+                                         io::length<19>,
+                                         io::crc<crc16::dm_imu, 0, 1>>;
+        IoParser::on_data(io_, key(0x01_b), [this](auto bytes) { callback(acc_, bytes); });
+        IoParser::on_data(io_, key(0x02_b), [this](auto bytes) { callback(gyro_, bytes); });
+        IoParser::on_data(io_, key(0x03_b), [this](auto bytes) { callback_angle(bytes); });
+        state_ = dev::state::offline;
+    }
+
+private:
+    static constexpr auto key(std::byte b) -> std::array<std::byte, 4> {
+        return { 0x55_b, 0xaa_b, 0x01_b, b };
+    }
+
+    void callback(auto& acc_or_gyro, auto bytes) {
+        std::span<const float, 3> data { reinterpret_cast<const float*>(bytes.data() + 4), 3 };
+        stdr::copy(data, acc_or_gyro.begin());
+        tick();
+    }
+    void callback_angle(auto bytes) {
+        std::span<const float, 3> data { reinterpret_cast<const float*>(bytes.data() + 4), 3 };
+        stdr::copy(stdv::transform(data, [](auto e) {
+            return e * std::numbers::pi_v<float> / 180.0f;
+        }), angle_.begin());
+        tick();
+    }
+};
+static_assert(dev::imu<Dm>);
+} // namespace imu
+} // namespace robo
+
