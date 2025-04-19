@@ -21,7 +21,7 @@ public:
 
 template <typename T>
 concept imu =
-    std::derived_from<T, Imu>;
+    std::derived_from<typename T::dev_type, Imu>;
 } // namespace dev
 } // namespace robo
 

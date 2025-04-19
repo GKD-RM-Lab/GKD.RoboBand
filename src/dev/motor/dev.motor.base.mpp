@@ -19,8 +19,8 @@ public:
 
 template <typename T>
 concept motor =
-    std::derived_from<T, Motor> and
-    requires(T t) {
+    std::derived_from<typename T::dev_type, Motor> and
+    requires(T::dev_type t) {
         { t.setTorque(std::declval<float>()) } -> std::same_as<void>;
     };
 

@@ -1,11 +1,142 @@
+module;
+
+#include <cstdint>
+
 export module robo:dev.motor.unitree;
 
 import std;
 import :dev.motor.base;
+import :io;
+import :support;
+using namespace std::chrono_literals;
+using namespace robo::spt::byte_literals;
 
 export namespace robo {
-namespace dev {
+namespace motor {
+class Unitree : public dev::Motor {
+public:
+    enum class dir : int {
+        forward = 1,
+        reverse = -1,
+    };
+    enum class type {
+        go_m8010_6,
+        a1,
+        b1,
+    };
+    enum class mode {
+        defalut           = 0,
+        foc               = 1,
+        encoder_calibrate = 2,
+    };
+    enum class state : std::uint8_t {
+        normal            = 0,
+        over_heat         = 1,
+        over_current      = 2,
+        over_voltage      = 3,
+        encoder_fault     = 4,
+        bus_under_voltage = 5,
+        winding_over_heat = 6,
+        reserved          = 7,
+    };
+    static constexpr std::size_t rx_size { 16 };
+    static constexpr std::size_t tx_size { 17 };
 
-} // namespace dev
+    using io_type = io::Serial::Info;
+private:
+    struct TrivInfo {
+        const io_type& io;
+        std::byte id;
+        enum type type;
+        enum dir dir;
+    };
+public:
+    struct Info : TrivInfo {
+        using dev_type = Unitree;
+        consteval Info(TrivInfo info) : TrivInfo { info } {
+            if (std::to_integer<unsigned>(info.id) > 14) {
+                throw std::out_of_range{ "motor id exceeds 14" };
+            }
+        };
+    };
+
+private:
+    enum state state_ { state::normal };
+    const Info& info_;
+    const std::array<std::byte, 3> rx_key { 0xfd_b, 0xee_b, info_.id | (static_cast<std::byte>(mode::foc) << 4) };
+    struct [[gnu::packed]] {
+        std::array<std::byte, 3> tx_key;
+        std::int16_t torque_set {};
+        std::int16_t speed_set {};
+        std::int32_t angle_set {};
+        std::int16_t k_pos_set {};
+        std::int16_t k_spd_set {};
+        std::uint16_t crc {};
+    } tx_data;
+    static_assert(sizeof(tx_data) == 17);
+    const float reduction_ratio;
+    float angle_offset_ {};
+
+public:
+    explicit Unitree(const Info& info) : 
+        dev::Motor { 10ms }, 
+        info_ { info },
+        tx_data { {0xfe_b, 0xee_b, info_.id | (static_cast<std::byte>(mode::foc) << 4)} },
+        reduction_ratio { [type = info_.type] { switch (type) {
+            case type::go_m8010_6: return 6.33f;
+            case type::a1: return 9.10f;
+            case type::b1: return 8.66f;
+        } }() } {
+        // TODO crc
+        io::with_parser<io::prefix<3>, io::length<rx_size>, io::crc<crc16::ccitt_false>>::
+            on_data(info_.io, rx_key, [this](auto bytes) { callback(bytes); });
+    }
+
+    void setTorque(float torque) {
+        if (state_ != state::normal) return;
+        tx_data.torque_set = static_cast<std::int16_t>(
+            std::clamp(torque * static_cast<float>(info_.dir) / reduction_ratio, -127.9f, 127.9f) * 256.0f);
+        // TODO crc
+        tx_data.crc = spt::crc::calc<crc16::ccitt_false>(std::as_bytes(std::span{&tx_data, 1}).first(15));
+        io::send(info_.io, tx_data);
+    }
+    
+    void setAngelOffset(float offset) {
+        angle_offset_ = offset;
+    }
+    void setAngel(float current_angle) {
+        angle_offset_ = angle_ - current_angle;
+    }
+
+    void callback(auto bytes) {
+        struct [[gnu::packed]] {
+            std::array<std::byte, 3> key;
+            std::int16_t  torque_fbk;
+            std::int16_t  speed_fbk;
+            std::int32_t  angle_fbk;
+            std::int8_t   temp_fbk;
+            enum state    state     : 3;
+            std::uint16_t force_fbk : 12;
+            std::uint8_t  reserved  : 1;
+            std::uint16_t crc;
+        } rx_data;
+        static_assert(sizeof(rx_data) == rx_size);
+
+        rx_data = *reinterpret_cast<const decltype(rx_data)*>(bytes.data());
+        
+        angle_ = static_cast<float>(rx_data.angle_fbk) / 
+            32768.0f * 2.0f * std::numbers::pi_v<float> / 
+            reduction_ratio * static_cast<float>(info_.dir) - angle_offset_;
+        speed_ = static_cast<float>(rx_data.speed_fbk) / 
+            256.0f * 2.0f * std::numbers::pi_v<float> / 
+            reduction_ratio * static_cast<float>(info_.dir);
+        state_ = rx_data.state;
+        if (state_ != state::normal) {
+            // TODO log
+        }
+    }
+};
+static_assert(dev::motor<Unitree::Info>);
+} // namespace motor
 } // namespace robo
 

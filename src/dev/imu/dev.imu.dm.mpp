@@ -1,7 +1,6 @@
 export module robo:dev.imu.dm;
 
 import std;
-import :dev.base;
 import :dev.imu.base;
 import :io;
 import :support;
@@ -21,11 +20,13 @@ public:
         // TODO install_angle
     };
 
+    static constexpr std::size_t rx_size { 17 };
+
 private:
     const io_type& io_;
     
 public:
-    Dm(const Info& info) : dev::Imu { 10ms }, io_ { info.io } {
+    explicit Dm(const Info& info) : dev::Imu { 10ms }, io_ { info.io } {
         using IoParser = io::with_parser<io::prefix<4>,
                                          io::tail<0x0a>,
                                          io::length<19>,
@@ -33,7 +34,6 @@ public:
         IoParser::on_data(io_, key(0x01_b), [this](auto bytes) { callback(acc_, bytes); });
         IoParser::on_data(io_, key(0x02_b), [this](auto bytes) { callback(gyro_, bytes); });
         IoParser::on_data(io_, key(0x03_b), [this](auto bytes) { callback_angle(bytes); });
-        state_ = dev::state::offline;
     }
 
 private:
@@ -54,7 +54,7 @@ private:
         tick();
     }
 };
-static_assert(dev::imu<Dm>);
+static_assert(dev::imu<Dm::Info>);
 } // namespace imu
 } // namespace robo
 

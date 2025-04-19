@@ -78,7 +78,7 @@ public:
 
 public:
     /** ctor *****************************/
-    SerialImpl(const info_type& config);
+    explicit SerialImpl(const info_type& config);
     ~SerialImpl() = default;
 
     /** user interface *******************/
