@@ -2,4 +2,7 @@ export module robo:dev.motor;
 
 export import :dev.motor.base;
 export import :dev.motor.unitree;
+#ifdef USE_WEBOTS
+export import :dev.motor.webots;
+#endif
 

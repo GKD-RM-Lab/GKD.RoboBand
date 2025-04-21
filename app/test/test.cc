@@ -64,7 +64,7 @@ constexpr robo::motor::Unitree::Info motor {{
     .io = serial_motor,
     .id = 0_b,
     .type = robo::motor::Unitree::type::go_m8010_6,
-    .dir = robo::motor::Unitree::dir::forward
+    .dir = robo::motor::dir::forward
 }};
 
 /** robot ********************************/

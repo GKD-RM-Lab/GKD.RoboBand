@@ -25,5 +25,12 @@ concept motor =
     };
 
 } // namespace dev
+
+namespace motor {
+enum class dir : int {
+    forward = 1,
+    reverse = -1,
+};
+} // namespace motor
 } // namespace robo
 

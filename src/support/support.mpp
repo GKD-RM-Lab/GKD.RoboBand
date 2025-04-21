@@ -4,4 +4,7 @@ export import :support.misc;
 export import :support.crc;
 export import :support.context;
 export import :support.multiton;
+#ifdef USE_WEBOTS
+export import :support.webots;
+#endif
 

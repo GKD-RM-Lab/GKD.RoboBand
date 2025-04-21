@@ -81,9 +81,7 @@ private:
     void run() noexcept {
         while (not started_ and not finishing_);
         while (not finishing_) {
-            for (auto& task : tasks_) {
-                task();
-            }
+            for (auto& task : tasks_) task();
             std::this_thread::sleep_for(info_.idle_duration);
         }
     }

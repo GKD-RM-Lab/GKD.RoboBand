@@ -15,10 +15,6 @@ export namespace robo {
 namespace motor {
 class Unitree : public dev::Motor {
 public:
-    enum class dir : int {
-        forward = 1,
-        reverse = -1,
-    };
     enum class type {
         go_m8010_6,
         a1,
@@ -48,7 +44,7 @@ private:
         const io_type& io;
         std::byte id;
         enum type type;
-        enum dir dir;
+        enum motor::dir dir;
     };
 public:
     struct Info : TrivInfo {

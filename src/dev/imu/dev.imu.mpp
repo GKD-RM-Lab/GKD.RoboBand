@@ -2,4 +2,7 @@ export module robo:dev.imu;
 
 export import :dev.imu.base;
 export import :dev.imu.dm;
+#ifdef USE_WEBOTS
+export import :dev.imu.webots;
+#endif
 

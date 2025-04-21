@@ -10,6 +10,8 @@ set_warnings("allextra", "pedantic")
 add_cxxflags("-fexperimental-library")
 add_rules("plugin.compile_commands.autoupdate", { outputdir = "build" })
 
+local use_webots = true;
+
 if is_mode("debug") then
     add_cxxflags("-ftrapv")
     add_cxxflags("-Wnull-dereference")
@@ -45,14 +47,20 @@ end
 
 target("src")
     set_kind("static")
-    add_files("src/**.mpp", { public = true })
     set_languages("cxx26")
-    set_policy("build.c++.modules", true)
+    add_files("src/**.mpp", { public = true })
+    if use_webots then
+        add_defines("USE_WEBOTS", { public = true })
+        add_includedirs("$(env WEBOTS_HOME)/include/controller/c", { public = true })
+        add_linkdirs("$(env WEBOTS_HOME)/lib/controller")
+        add_links("Controller")
+    else
+        remove_files("src/**.webots.mpp");
+    end
 
 target("test")
     set_kind("binary")
+    set_languages("cxx26")
     add_deps("src")
     add_files("app/test/*.cc")
-    set_languages("cxx26")
-    set_policy("build.c++.modules", true)
 

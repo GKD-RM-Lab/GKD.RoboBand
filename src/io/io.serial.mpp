@@ -63,7 +63,7 @@ private:
     /** members **************************/
     Fd fd_ {};
     io::state state_ { io::state::offline };
-    const info_type info_;
+    const info_type& info_;
 
     std::mutex tx_mutex_ {};
     std::vector<std::byte> tx_buffer_ {};
