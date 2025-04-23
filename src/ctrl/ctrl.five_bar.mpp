@@ -1,0 +1,107 @@
+module;
+
+#include <eigen3/Eigen/Eigen>
+
+export module robo:ctrl.five_bar;
+
+import std;
+import :support.math;
+import :support.misc;
+import :dev.motor;
+
+export namespace robo {
+namespace ctrl {
+template <dev::motor M1, dev::motor M2>
+struct FiveBarInfo {
+    const M1& motor1;
+    const M2& motor2;
+    float l_a;
+    float l_b;
+    float l_c;
+};
+
+template <dev::motor M1, dev::motor M2>
+class FiveBar : 
+    public spt::immovable_base, 
+    public spt::not_copyable_base,
+    public FiveBarInfo<M1, M2> {
+public:
+    M1::dev_type motor1 { FiveBarInfo<M1, M2>::motor1 };
+    M2::dev_type motor2 { FiveBarInfo<M1, M2>::motor2 };
+
+private:
+    const float l_a { FiveBarInfo<M1, M2>::l_a };
+    const float l_b { FiveBarInfo<M1, M2>::l_b };
+    const float l_c { FiveBarInfo<M1, M2>::l_c };
+
+    float l {};
+    float dot_l {};
+    float theta_l {};
+    float dot_theta_l {};
+
+    Eigen::Matrix<float, 2, 2> jacobian_trans;
+
+public:
+    explicit FiveBar(const FiveBarInfo<M1, M2>& info) : 
+        FiveBarInfo<M1, M2> { info } {}
+
+    auto length() const { return l; }
+    auto dot_length() const { return dot_l; }
+    auto angle() const { return theta_l; }
+    auto dot_angle() const { return dot_theta_l; }
+
+    void update() {
+        // update motors' data
+        float varphi_1 = motor1.getAngle();
+        float varphi_2 = motor2.getAngle();
+
+        // forward solution : update l theta_l
+        float x_B_1 = l_a - l_b * std::cos(varphi_1);
+        float x_B_2 = -l_a + l_b * std::cos(varphi_2);
+        float y_B_1 = l_b * std::sin(varphi_1);
+        float y_B_2 = l_b * std::sin(varphi_2);
+
+        float x_B = x_B_1 - x_B_2;
+        float y_B = y_B_1 - y_B_2;
+
+        float varphi_B_1 = std::acos(std::sqrt(x_B * x_B + y_B * y_B) / (2 * l_c)) - std::atan2(y_B, x_B);
+
+        float x_C = l_a - l_b * std::cos(varphi_1) - l_c * std::cos(varphi_B_1); 
+        float y_C = l_b * std::sin(varphi_1) + l_c * std::sin(varphi_B_1);
+
+        l = std::sqrt(x_C * x_C + y_C * y_C);
+        theta_l = std::atan2(x_C, y_C);
+
+        // calculate jacobian_trans
+        float varphi_B_2 = std::atan2(y_C - y_B_2, x_C - x_B_2);
+        jacobian_trans << -l_b * std::cos(theta_l + varphi_B_2) * std::sin(varphi_1 - varphi_B_1),
+                        l_b / l * std::sin(theta_l + varphi_B_2) * std::sin(varphi_1 - varphi_B_1),
+                        -l_b * std::cos(theta_l - varphi_B_1) * std::sin(varphi_2 - varphi_B_2),
+                        l_b / l * std::sin(theta_l - varphi_B_1) * std::sin(varphi_2 - varphi_B_2);
+        jacobian_trans /= std::sin(varphi_B_1 + varphi_B_2);
+
+        // joint space to task space : update dot_l dot_theta_l
+        Eigen::Vector<float, 2> joint;
+        Eigen::Vector<float, 2> task;
+        joint << varphi_1, varphi_2;
+        task = jacobian_trans * joint;
+        dot_l = task(0);
+        dot_theta_l = task(1);
+    }
+
+    void setForce(const float F_n, const float tau_j) {
+        Eigen::Vector<float, 2> force_virtual;
+        Eigen::Vector<float, 2> force_actual;
+
+        force_virtual << F_n, tau_j;
+        force_actual = jacobian_trans * force_virtual;
+
+        motor1.setTorque(force_actual(0));
+        motor2.setTorque(force_actual(1));
+    }
+};
+template <dev::motor M1, dev::motor M2>
+FiveBar(FiveBarInfo<M1, M2>) -> FiveBar<M1, M2>;
+} // namespace ctrl
+} // namespace robo
+
