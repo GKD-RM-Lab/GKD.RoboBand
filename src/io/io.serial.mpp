@@ -39,7 +39,7 @@ public:
         using owner_type = SerialImpl;
     
         std::string_view name;
-        const spt::thread_context::info& context;
+        const spt::task_context::continuous::info& context;
         std::chrono::nanoseconds rx_idle_duration;
         std::size_t rx_buffer_size;
         baud_rate baud_rate;
@@ -281,10 +281,7 @@ bool SerialImpl::Info::apply(termios& tio) const {
 ///////////////////////////////////////////
 SerialImpl::SerialImpl(const info_type& config) :
     info_ { config } {
-    spt::thread_context::get(info_.context).add_task(
-        [this] { task(); }, 
-        info_.rx_idle_duration
-    );
+    spt::task_context::add_task(info_.context, info_.rx_idle_duration, [this] { task(); });
 }
 
 ///////////////////////////////////////////

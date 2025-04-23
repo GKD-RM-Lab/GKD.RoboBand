@@ -63,4 +63,9 @@ target("test")
     set_languages("cxx26")
     add_deps("src")
     add_files("app/test/*.cc")
+    -- TODO rt
+    -- after_build(function (target)
+    --     import("privilege.sudo")
+    --     sudo.run("setcap CAP_SYS_NICE+eip %s", target:targetfile())
+    -- end)
 
