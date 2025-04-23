@@ -9,7 +9,7 @@ export module robo:dev.motor.webots;
 import std;
 import :dev.motor.base;
 import :io;
-import :support;
+import :support.task_context;
 
 export namespace robo {
 namespace motor {
@@ -31,12 +31,12 @@ private:
 
 public:
     explicit Webots(const Info& info) :
-        Motor { std::chrono::hours::max() },
+        Motor { std::chrono::nanoseconds::max() },
         info_ { info },
         motor_tag_ { spt::webots(wb_robot_get_device, std::string{info.name}.c_str()) },
         encoder_tag_ { spt::webots(wb_motor_get_position_sensor, motor_tag_) } {
         spt::webots(wb_position_sensor_enable, encoder_tag_, static_cast<int>(spt::webots.basic_time_step()));
-        spt::task_context::add_task(spt::webots, [this] {
+        spt::task_context::add_task(spt::task_context::webots::type::update, [this] {
             float angle_temp = static_cast<float>(spt::webots(wb_position_sensor_get_value, encoder_tag_));
             angle_ = static_cast<float>(info_.dir) * angle_temp - angle_offset_;
             speed_ = (angle_ - angle_last_) / (spt::webots.basic_time_step() * 0.001f);

@@ -1,0 +1,44 @@
+export module robo:ctrl.basic;
+
+import std;
+import :support.math;
+
+export namespace robo {
+namespace ctrl {
+struct pid {
+    struct param {
+        float kp;
+        float ki;
+        float kd;
+        float max_iout;
+        float max_out;
+    };
+
+    const struct param param;
+    std::array<float, 2> error {};
+    float i_out {};
+
+    pid(const struct param& param) : param { param } {}
+
+    float calc(const float err) {
+        error[1] = error[0];
+        error[0] = err;
+
+        float p_out = param.kp * error[0];
+        float d_out = param.kd * (error[0] - error[1]);
+        i_out += param.ki * error[0];
+        math::abs_limit(i_out, param.max_iout);
+
+        float out = p_out + i_out + d_out;
+        math::abs_limit(out, param.max_out);
+        return out;
+    }
+    float calc(const float set, const float feedback) {
+        return calc(set - feedback);
+    }
+    float operator()(auto... args) {
+        return calc(args...);
+    }
+};
+} // namespace ctrl
+} // namespace robo

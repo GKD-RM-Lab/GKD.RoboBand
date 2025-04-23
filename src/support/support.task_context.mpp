@@ -32,7 +32,7 @@ private:
 
 public:
     ~webots_impl() {
-        if (initialized_) wb_robot_cleanup();
+        // if (initialized_) wb_robot_cleanup(); // TODO CRASH
     }
 
     bool initialized() const { return initialized_; }
@@ -56,12 +56,19 @@ namespace task_context {
 class webots :
     public spt::immovable_base, 
     public spt::not_copyable_base {
+public:
+    enum class type {
+        update,
+        ctrl,
+    };
+
 private:
     bool started_ { false };
     bool finishing_ { false };
     bool finished_ { false };
     std::jthread thread_ { [this] { run(); } };
-    std::vector<std::function<void()>> tasks_ {};
+    std::vector<std::function<void()>> update_tasks_ {};
+    std::vector<std::function<void()>> ctrl_tasks_ {};
 
     webots() = default;
 
@@ -70,33 +77,26 @@ public:
         static webots obj {};
         return obj;
     }
-    void add_task(spt::invocable_r<void> auto&& task) {
-        tasks_.emplace_back(std::forward<decltype(task)>(task));
-    }
-    void start() {
-        if (tasks_.size() == 0) {
-            throw std::logic_error{ 
-                "webots task context has no assigned task."
-            };
+    void add_task(enum type type, spt::invocable_r<void> auto&& task) {
+        if (type == type::update) {
+            update_tasks_.emplace_back(std::forward<decltype(task)>(task));
+        } else {
+            ctrl_tasks_.emplace_back(std::forward<decltype(task)>(task));
         }
-        // TODO log
-        started_ = true;
     }
+    void start() { started_ = true; }
     void finish() { finishing_ = true; }
     bool finished() const { return finished_; }
 
 private:
     bool step() {
-        if (spt::webots(wb_robot_step, static_cast<int>(spt::webots.basic_time_step())) == -1) {
-            return false;
-        }
-        for (auto& task : tasks_) task();
-        return true;
+        return spt::webots(wb_robot_step, static_cast<int>(spt::webots.basic_time_step())) != -1;
     }
     void run() {
         while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
-        while (step() and not finishing_) {
-            for (auto& task : tasks_) task();
+        while (not finishing_ and step()) {
+            for (auto& task : update_tasks_) task();
+            for (auto& task : ctrl_tasks_) task();
         }
         finished_ = true;
     }
@@ -303,7 +303,7 @@ consteval auto make() -> info {
 ///////////////////////////////////////////
 // task_context
 //     spt::task_context::add_task(info, args...)
-//     spt::task_context::add_task(spt::webots, func)
+//     spt::task_context::add_task(spt::task_context::webots::type, func)
 //     spt::task_context::start()
 //     spt::task_context::finish()
 //     spt::task_context::finished() -> bool
@@ -312,8 +312,8 @@ void add_task(auto&& info, auto&&... args) {
     spt::multiton::get(info).add_task(std::forward<decltype(args)>(args)...);
 }
 #ifdef USE_WEBOTS
-void add_task(spt::detail::webots_impl&, auto&&... args) {
-    spt::task_context::webots::get().add_task(std::forward<decltype(args)>(args)...);
+void add_task(spt::task_context::webots::type type, auto&&... args) {
+    spt::task_context::webots::get().add_task(type, std::forward<decltype(args)>(args)...);
 }
 #endif
 void start() {
@@ -350,6 +350,11 @@ bool finished() {
     if (spt::webots.initialized()) ret &= spt::task_context::webots::get().finished();
 #endif
     return ret;
+}
+void wait_until_all_finished() {
+    while (not finished()) {
+        std::this_thread::sleep_for(1ms);
+    }
 }
 } // namespace task_context
 } // namespace spt

@@ -7,7 +7,8 @@ export module robo:dev.motor.unitree;
 import std;
 import :dev.motor.base;
 import :io;
-import :support;
+import :support.crc;
+import :support.math;
 using namespace std::chrono_literals;
 using namespace robo::spt::byte_literals;
 
@@ -91,7 +92,7 @@ public:
     void setTorque(float torque) {
         if (state_ != state::normal) return;
         tx_data.torque_set = static_cast<std::int16_t>(
-            std::clamp(torque * static_cast<float>(info_.dir) / reduction_ratio, -127.9f, 127.9f) * 256.0f);
+            math::abs_limited(torque * static_cast<float>(info_.dir) / reduction_ratio, 127.9f) * 256.0f);
         // TODO crc
         tx_data.crc = spt::crc::calc<crc16::ccitt_false>(std::as_bytes(std::span{&tx_data, 1}).first(15));
         io::send(info_.io, tx_data);

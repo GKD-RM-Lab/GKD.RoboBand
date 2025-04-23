@@ -9,7 +9,8 @@ module;
 export module robo:io.serial;
 
 import std;
-import :support;
+import :support.misc;
+import :support.task_context;
 import :io.base;
 
 export namespace robo {

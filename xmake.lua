@@ -3,6 +3,8 @@ add_rules("mode.debug")
 add_rules("mode.releasedbg")
 add_rules("mode.release")
 
+add_requires("eigen")
+
 set_toolchains("llvm")
 set_runtimes("c++_shared")
 set_policy("build.warning", true)
@@ -49,6 +51,7 @@ target("src")
     set_kind("static")
     set_languages("cxx26")
     add_files("src/**.mpp", { public = true })
+    add_packages("eigen")
     if use_webots then
         add_defines("USE_WEBOTS", { public = true })
         add_includedirs("$(env WEBOTS_HOME)/include/controller/c", { public = true })

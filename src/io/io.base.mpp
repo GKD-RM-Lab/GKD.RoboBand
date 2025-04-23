@@ -7,7 +7,7 @@ module;
 export module robo:io.base;
 
 import std;
-import :support;
+import :support.multiton;
 
 export namespace robo {
 namespace io {
