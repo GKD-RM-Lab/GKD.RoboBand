@@ -30,11 +30,13 @@ class WheelLegInfo {
 };
 
 template <ctrl::leg Leg, dev::motor M>
-class WheelLeg :
+class WheelLeg final :
     public spt::immovable_base, 
     public spt::not_copyable_base {
 private:
     const WheelLegInfo<Leg, M>& info_;
+
+    bool started_ { false };
 
     const float f_gravity { info_.f_gravity };
     const std::array<float, 8> trans_arr { 
@@ -49,13 +51,19 @@ public:
     M::dev_type    wheel_left   { info_.wheel_left };
     M::dev_type    wheel_right  { info_.wheel_right };
 
-    WheelLeg(const WheelLeg<Leg, M>& info) : 
+    explicit WheelLeg(const WheelLeg<Leg, M>& info) : 
         info_ { info } {
         spt::task_context::add_task(info_.context, [this] { ctrl_loop(); });
     }
 
+    void run() { started_ = true; };
+    void init() {}
+
 private:
     void ctrl_loop() {
+        if (started_) {
+            
+        }
     }
 };
 } // namespace robo::ctrl::chassis

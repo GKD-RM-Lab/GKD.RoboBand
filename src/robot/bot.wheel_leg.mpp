@@ -1,0 +1,34 @@
+export module robo:bot.wheel_leg;
+
+import :spt;
+import :ctrl.chassis.wheel_leg;
+
+export namespace robo::bot {
+template <typename WL>
+struct WheelLegInfo {
+    WL wheel_leg;
+};
+
+template <typename WL>
+class WheelLeg final :
+    public spt::immovable_base, 
+    public spt::not_copyable_base {
+private:
+    WheelLegInfo<WL> info_;
+    WL::ctrl_type wheel_leg { info_.wheel_leg };
+    
+public:
+    explicit WheelLeg(const WheelLegInfo<WL>& info) : info_ { info } {}
+
+    void run() {
+        spt::task_context::start();
+
+        wheel_leg.init();
+        wheel_leg.run();
+        spt::task_context::wait_until_all_finished();
+    }
+};
+template <typename WL>
+WheelLeg(WheelLegInfo<WL>) -> WheelLeg<WL>;
+} // namespace robo::bot
+

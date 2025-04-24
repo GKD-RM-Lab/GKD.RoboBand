@@ -24,7 +24,7 @@ struct FiveBarInfo {
 };
 
 template <dev::motor M1, dev::motor M2>
-class FiveBar : 
+class FiveBar final : 
     public spt::immovable_base, 
     public spt::not_copyable_base {
 private:

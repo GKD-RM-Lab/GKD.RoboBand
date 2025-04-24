@@ -2,18 +2,17 @@ set_defaultmode("debug")
 add_rules("mode.debug")
 add_rules("mode.releasedbg")
 add_rules("mode.release")
+add_rules("plugin.compile_commands.autoupdate", { outputdir = "build" })
 
 add_requires("eigen")
 
 set_toolchains("llvm")
 set_runtimes("c++_shared")
+set_languages("cxx26")
 set_policy("build.warning", true)
 set_warnings("allextra", "pedantic")
 add_cxxflags("-fexperimental-library")
-add_rules("plugin.compile_commands.autoupdate", { outputdir = "build" })
-
-local use_webots = true;
-
+    
 if is_mode("debug") then
     add_cxxflags("-ftrapv")
     add_cxxflags("-Wnull-dereference")
@@ -47,28 +46,34 @@ if is_mode("debug") then
     add_cxxflags("-Wno-pre-c++23-compat")
 end
 
-target("src")
+option("use_webots") do
+    add_linkdirs("$(env WEBOTS_HOME)/lib/controller")
+    add_links("Controller")
+end
+
+target("src") do
     set_kind("static")
-    set_languages("cxx26")
-    add_files("src/**.mpp", { public = true })
+    add_files("src/**.mpp|**.webots.mpp", { public = true })
     add_packages("eigen")
-    if use_webots then
+    add_options("use_webots")
+    if has_config("use_webots") then
         add_defines("USE_WEBOTS", { public = true })
+        add_files("src/**.webots.mpp", { public = true })
         add_includedirs("$(env WEBOTS_HOME)/include/controller/c", { public = true })
-        add_linkdirs("$(env WEBOTS_HOME)/lib/controller")
-        add_links("Controller")
-    else
-        remove_files("src/**.webots.mpp");
     end
+end
 
-target("test")
-    set_kind("binary")
-    set_languages("cxx26")
-    add_deps("src")
-    add_files("app/test/*.cc")
-    -- TODO rt
-    -- after_build(function (target)
-    --     import("privilege.sudo")
-    --     sudo.run("setcap CAP_SYS_NICE+eip %s", target:targetfile())
-    -- end)
+if has_config("use_webots") then
+    target("wheel_leg.webots") do
+        set_default(false)
+        set_kind("binary")
+        add_deps("src")
+        add_files("app/wheel_leg/webots.cc")
+    end
+end
 
+-- TODO rt
+-- after_build(function (target)
+--     import("privilege.sudo")
+--     sudo.run("setcap CAP_SYS_NICE+eip %s", target:targetfile())
+-- end)
