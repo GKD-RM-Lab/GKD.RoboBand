@@ -9,8 +9,7 @@ export module robo:io.base;
 import std;
 import :support.multiton;
 
-export namespace robo {
-namespace io {
+export namespace robo::io {
 ///////////////////////////////////////////
 // enums
 ///////////////////////////////////////////
@@ -188,6 +187,5 @@ public:
         return { fd_, events, 0 };
     }
 };
-} // namespace io
-} // namespace robo
+} // namespace robo::io
 

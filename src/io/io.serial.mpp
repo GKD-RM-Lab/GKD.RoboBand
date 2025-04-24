@@ -13,8 +13,7 @@ import :support.misc;
 import :support.task_context;
 import :io.base;
 
-export namespace robo {
-namespace io {
+export namespace robo::io {
 namespace detail {
 ///////////////////////////////////////////
 // Serial: class definition
@@ -475,6 +474,5 @@ namespace Serial {
 using Info = detail::SerialImpl::info_type;
 static_assert(io::bare_io<Info>);
 } // namespace Serial
-} // namespace io
-} // namespace robo
+} // namespace robo::io
 

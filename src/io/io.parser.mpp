@@ -5,8 +5,7 @@ import :io.base;
 import :support.crc;
 namespace stdr = std::ranges;
 
-export namespace robo {
-namespace io {
+export namespace robo::io {
 ///////////////////////////////////////////
 // concepts
 //     keyed_parser : key_type /* hashable */ 
@@ -187,8 +186,7 @@ struct crc {
         }
     }
 };
-} // namespace io
-} // namespace robo
+} // namespace robo::io
 
 ///////////////////////////////////////////
 // custom hash

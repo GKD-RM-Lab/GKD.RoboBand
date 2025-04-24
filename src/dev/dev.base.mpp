@@ -3,8 +3,7 @@ export module robo:dev.base;
 import std;
 import :support.misc;
 
-export namespace robo {
-namespace dev {
+export namespace robo::dev {
 struct Dev :
     public spt::immovable_base, 
     public spt::not_copyable_base {
@@ -18,6 +17,5 @@ public:
     bool offline() { return std::chrono::steady_clock::now() - tick_time_ > offline_duration_; }
     void tick() { tick_time_ = std::chrono::steady_clock::now(); }
 };
-} // namespace dev
-} // namespace robo
+} // namespace robo::dev
 

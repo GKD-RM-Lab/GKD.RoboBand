@@ -2,4 +2,10 @@ export module robo:ctrl;
 
 export import :ctrl.basic;
 export import :ctrl.five_bar;
+export import :ctrl.chassis.wheel_legged;
+
+export namespace robo {
+namespace chassis = robo::ctrl::chassis;
+// namespace gimbal = robo::ctrl::gimbal;
+}
 

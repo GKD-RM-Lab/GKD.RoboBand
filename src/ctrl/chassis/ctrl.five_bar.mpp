@@ -9,8 +9,7 @@ import :support.math;
 import :support.misc;
 import :dev.motor;
 
-export namespace robo {
-namespace ctrl {
+export namespace robo::ctrl {
 template <dev::motor M1, dev::motor M2>
 struct FiveBarInfo {
     const M1& motor1;
@@ -102,6 +101,5 @@ public:
 };
 template <dev::motor M1, dev::motor M2>
 FiveBar(FiveBarInfo<M1, M2>) -> FiveBar<M1, M2>;
-} // namespace ctrl
-} // namespace robo
+} // namespace robo::ctrl
 

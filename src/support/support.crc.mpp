@@ -136,64 +136,64 @@ consteval bool check() {
     return crc::calc<Param>(std::string_view{"123456789"}) == Param.check_value;
 }
 } // namespace crc
-} // namespace spt
 
 ///////////////////////////////////////////
 // crc algorithms
 ///////////////////////////////////////////
 namespace crc8 {
-// constexpr spt::crc::param<std::uint8_t, 8> maxim {
+// constexpr crc::param<std::uint8_t, 8> maxim {
 //     0x31, 0x00, 0x00, true, true, 0xa1
-// }; static_assert(spt::crc::check<crc8::maxim>());
-constexpr spt::crc::param<std::uint8_t, 8> ccitt {
+// }; static_assert(crc::check<crc8::maxim>());
+constexpr crc::param<std::uint8_t, 8> ccitt {
     0x07, 0x00, 0x00, false, false, 0xf4
-}; static_assert(spt::crc::check<crc8::ccitt>());
-constexpr spt::crc::param<std::uint8_t, 8> lte {
+}; static_assert(crc::check<crc8::ccitt>());
+constexpr crc::param<std::uint8_t, 8> lte {
     0x9b, 0x00, 0x00, false, false, 0xea
-}; static_assert(spt::crc::check<crc8::lte>());
+}; static_assert(crc::check<crc8::lte>());
 } // namespace crc8
 
 namespace crc16 {
-constexpr spt::crc::param<std::uint16_t, 16> dm_imu {
+constexpr crc::param<std::uint16_t, 16> dm_imu {
     0x1021, 0xffff, 0x0000, false, false, 0x5f16
 };
-constexpr spt::crc::param<std::uint16_t, 16> ccitt_false {
+constexpr crc::param<std::uint16_t, 16> ccitt_false {
     0x1021, 0xffff, 0x0000, false, false, 0x29b1
-}; static_assert(spt::crc::check<crc16::ccitt_false>());
-// constexpr spt::crc::param<std::uint16_t, 16> modbus {
+}; static_assert(crc::check<crc16::ccitt_false>());
+// constexpr crc::param<std::uint16_t, 16> modbus {
 //     0x8005, 0xffff, 0x0000, true, true, 0x4b37
-// }; static_assert(spt::crc::check<crc16::modbus>());
-// constexpr spt::crc::param<std::uint16_t, 16> xmodem {
+// }; static_assert(crc::check<crc16::modbus>());
+// constexpr crc::param<std::uint16_t, 16> xmodem {
 //     0x1021, 0x0000, 0x0000, false, false, 0x31c3
-// }; static_assert(spt::crc::check<crc16::xmodem>());
-// constexpr spt::crc::param<std::uint16_t, 16> kermit {
+// }; static_assert(crc::check<crc16::xmodem>());
+// constexpr crc::param<std::uint16_t, 16> kermit {
 //     0x1021, 0x0000, 0x0000, true, true, 0x2189
-// }; static_assert(spt::crc::check<crc16::kermit>());
-// constexpr spt::crc::param<std::uint16_t, 16> ibm {
+// }; static_assert(crc::check<crc16::kermit>());
+// constexpr crc::param<std::uint16_t, 16> ibm {
 //     0x8005, 0x0000, 0xffff, true, true, 0xbb3d
-// }; static_assert(spt::crc::check<crc16::ibm>());
+// }; static_assert(crc::check<crc16::ibm>());
 } // namespace crc16
 
-// namespace crc32 {
-// constexpr spt::crc::param<std::uint32_t, 32> standard {
+namespace crc32 {
+// constexpr crc::param<std::uint32_t, 32> standard {
 //     0x04c11db7, 0xffffffff, 0xffffffff, true, true, 0xcbf43926
-// }; static_assert(spt::crc::check<crc32::standard>());
-// constexpr spt::crc::param<std::uint32_t, 32> castagnoli {
+// }; static_assert(crc::check<crc32::standard>());
+// constexpr crc::param<std::uint32_t, 32> castagnoli {
 //     0x1edc6f41, 0xffffffff, 0xffffffff, true, true, 0xe3069283
-// }; static_assert(spt::crc::check<crc32::castagnoli>());
-// constexpr spt::crc::param<std::uint32_t, 32> koopman {
+// }; static_assert(crc::check<crc32::castagnoli>());
+// constexpr crc::param<std::uint32_t, 32> koopman {
 //     0x741b8cd7, 0xffffffff, 0x00000000, true, true, 0x2d3dd0ae
-// }; static_assert(spt::crc::check<crc32::koopman>());
-// constexpr spt::crc::param<std::uint32_t, 32> jams {
+// }; static_assert(crc::check<crc32::koopman>());
+// constexpr crc::param<std::uint32_t, 32> jams {
 //     0x04c11db7, 0xffffffff, 0x00000000, true, true, 0x340bc6d9
-// }; static_assert(spt::crc::check<crc32::jams>());
-// } // namespace crc32
+// }; static_assert(crc::check<crc32::jams>());
+} // namespace crc32
+} // namespace spt
 
 ///////////////////////////////////////////
 // specialization for crc algorithms
 ///////////////////////////////////////////
 template <>
-struct spt::crc::detail::calc_impl_t<crc16::dm_imu> {
+struct spt::crc::detail::calc_impl_t<spt::crc16::dm_imu> {
     constexpr auto operator()(crc::detail::byte_range auto&& range) {
         static constexpr auto& Param { crc16::dm_imu };
         using algo_type = std::remove_cvref_t<decltype(Param)>;
@@ -209,6 +209,6 @@ struct spt::crc::detail::calc_impl_t<crc16::dm_imu> {
 
         return crc;
     } 
-}; static_assert(spt::crc::check<crc16::dm_imu>());
+}; static_assert(spt::crc::check<spt::crc16::dm_imu>());
 } // namespace robo
 

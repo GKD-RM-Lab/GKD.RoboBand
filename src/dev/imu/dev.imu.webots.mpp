@@ -13,8 +13,7 @@ import :io;
 import :support.task_context;
 namespace stdv = std::views;
 
-export namespace robo {
-namespace imu {
+export namespace robo::imu {
 class Webots : public dev::Imu {
 public:
     struct Info {
@@ -52,6 +51,5 @@ public:
         });
     }
 };
-} // namespace imu
-} // namespace robo
+} // namespace robo::imu
 

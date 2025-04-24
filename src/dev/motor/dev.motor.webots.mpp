@@ -11,8 +11,7 @@ import :dev.motor.base;
 import :io;
 import :support.task_context;
 
-export namespace robo {
-namespace motor {
+export namespace robo::motor {
 class Webots : public dev::Motor {
 public:
     struct Info {
@@ -55,6 +54,5 @@ public:
     }
 };
 static_assert(dev::motor<Webots::Info>);
-} // namespace motor
-} // namespace robo
+} // namespace robo::motor
 

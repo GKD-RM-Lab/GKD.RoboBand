@@ -1,10 +1,9 @@
 export module robo:ctrl.basic;
 
 import std;
-import :support.math;
+import :support;
 
-export namespace robo {
-namespace ctrl {
+export namespace robo::ctrl {
 struct pid {
     struct param {
         float kp;
@@ -40,6 +39,5 @@ struct pid {
         return calc(args...);
     }
 };
-} // namespace ctrl
-} // namespace robo
+} // namespace robo::ctrl
 

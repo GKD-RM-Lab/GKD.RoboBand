@@ -2,8 +2,7 @@ export module robo:support.misc;
 
 import std;
 
-export namespace robo {
-namespace spt {
+export namespace robo::spt {
 template <typename F, typename Ret, typename... Args>
 concept invocable_r = std::is_invocable_r_v<Ret, F, Args...>;
 
@@ -42,6 +41,5 @@ consteval std::byte operator"" _b(unsigned long long int byte) {
     return static_cast<std::byte>(byte);
 }
 } // namespace byte_literals
-} // namespace spt
-} // namespace robo
+} // namespace robo::spt
 

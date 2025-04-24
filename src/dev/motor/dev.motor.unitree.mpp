@@ -7,13 +7,11 @@ export module robo:dev.motor.unitree;
 import std;
 import :dev.motor.base;
 import :io;
-import :support.crc;
-import :support.math;
+import :support;
 using namespace std::chrono_literals;
 using namespace robo::spt::byte_literals;
 
-export namespace robo {
-namespace motor {
+export namespace robo::motor {
 class Unitree : public dev::Motor {
 public:
     enum class type {
@@ -134,6 +132,5 @@ public:
     }
 };
 static_assert(dev::motor<Unitree::Info>);
-} // namespace motor
-} // namespace robo
+} // namespace robo::motor
 

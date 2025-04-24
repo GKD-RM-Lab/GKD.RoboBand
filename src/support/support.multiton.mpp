@@ -3,8 +3,7 @@ export module robo:support.multiton;
 import std;
 import :support.misc;
 
-export namespace robo {
-namespace spt {
+export namespace robo::spt {
 ///////////////////////////////////////////
 // concepts:
 //     owner (impl) : info() info_type                     
@@ -90,6 +89,5 @@ auto& instances() {
     return spt::detail::multiton_impl<info_type>::instances;
 }
 } // namespace multiton
-} // namespace spt
-} // namespace robo
+} // namespace robo::spt
 

@@ -3,8 +3,7 @@ export module robo:support.math;
 import std;
 namespace stdr = std::ranges;
 
-export namespace robo {
-namespace math {
+export namespace robo::spt::math {
 template <typename T>
     requires std::integral<T> or std::floating_point<T>
 void abs_limit(T& val, const T limit) {
@@ -49,6 +48,5 @@ void abs_limit(spannable auto&& val, spannable auto&& limit) {
     std::span limit_view { limit.data(), static_cast<std::size_t>(limit.size()) };
     abs_limit(val_view, limit_view);
 }
-} // namespace math
-} // namespace robo
+} // namespace robo::spt::math
 
