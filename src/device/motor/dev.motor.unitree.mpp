@@ -7,7 +7,7 @@ export module robo:dev.motor.unitree;
 import std;
 import :dev.motor.base;
 import :io;
-import :support;
+import :spt;
 using namespace std::chrono_literals;
 using namespace robo::spt::byte_literals;
 

@@ -1,4 +1,4 @@
-export module robo:support.misc;
+export module robo:spt.misc;
 
 import std;
 

@@ -4,11 +4,11 @@ module;
 #include <webots/robot.h>
 
 #endif
-export module robo:support.task_context;
+export module robo:spt.task_context;
 
 import std;
-import :support.misc;
-import :support.multiton;
+import :spt.misc;
+import :spt.multiton;
 namespace stdv = std::views;
 namespace stdr = std::ranges;
 using namespace std::chrono_literals;

@@ -1,4 +1,4 @@
-export module robo:support.math;
+export module robo:spt.math;
 
 import std;
 namespace stdr = std::ranges;

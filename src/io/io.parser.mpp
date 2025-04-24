@@ -2,7 +2,7 @@ export module robo:io.parser;
 
 import std;
 import :io.base;
-import :support.crc;
+import :spt.crc;
 namespace stdr = std::ranges;
 
 export namespace robo::io {

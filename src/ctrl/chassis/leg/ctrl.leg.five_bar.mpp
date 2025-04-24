@@ -5,7 +5,7 @@ module;
 export module robo:ctrl.leg.five_bar;
 
 import std;
-import :support;
+import :spt;
 import :dev.motor;
 
 export namespace robo::ctrl {

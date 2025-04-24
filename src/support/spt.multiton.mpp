@@ -1,7 +1,7 @@
-export module robo:support.multiton;
+export module robo:spt.multiton;
 
 import std;
-import :support.misc;
+import :spt.misc;
 
 export namespace robo::spt {
 ///////////////////////////////////////////

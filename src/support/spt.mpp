@@ -1,0 +1,15 @@
+export module robo:spt;
+
+export import :spt.misc;
+export import :spt.math;
+export import :spt.crc;
+export import :spt.task_context;
+export import :spt.multiton;
+
+export namespace robo {
+namespace math = spt::math;
+namespace crc8 = spt::crc8;
+namespace crc16 = spt::crc16;
+namespace crc32 = spt::crc32;
+}
+

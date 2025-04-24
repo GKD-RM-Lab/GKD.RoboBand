@@ -1,7 +1,7 @@
 export module robo:ctrl.basic;
 
 import std;
-import :support;
+import :spt;
 
 export namespace robo::ctrl {
 class pid {

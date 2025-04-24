@@ -3,7 +3,7 @@ export module robo:dev.imu.dm;
 import std;
 import :dev.imu.base;
 import :io;
-import :support;
+import :spt;
 using namespace std::chrono_literals;
 using namespace robo::spt::byte_literals;
 namespace stdr = std::ranges;

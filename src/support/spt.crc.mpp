@@ -2,7 +2,7 @@ module;
 
 #include <cstdint>
 
-export module robo:support.crc;
+export module robo:spt.crc;
 
 import std;
 namespace stdr = std::ranges;

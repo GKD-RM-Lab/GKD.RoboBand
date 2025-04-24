@@ -8,7 +8,7 @@ import std;
 import :dev;
 import :ctrl.basic;
 import :ctrl.leg;
-import :support;
+import :spt;
 
 export namespace robo::ctrl::chassis {
 template <ctrl::leg Leg, dev::motor M>
