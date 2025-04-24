@@ -2,18 +2,22 @@ module;
 
 #include <eigen3/Eigen/Eigen>
 
-export module robo:ctrl.five_bar;
+export module robo:ctrl.leg.five_bar;
 
 import std;
-import :support.math;
-import :support.misc;
+import :support;
 import :dev.motor;
 
 export namespace robo::ctrl {
 template <dev::motor M1, dev::motor M2>
+class FiveBar;
+
+template <dev::motor M1, dev::motor M2>
 struct FiveBarInfo {
-    const M1& motor1;
-    const M2& motor2;
+    using ctrl_type = FiveBar<M1, M2>;
+
+    M1 motor1;
+    M2 motor2;
     float l_a;
     float l_b;
     float l_c;
@@ -22,16 +26,17 @@ struct FiveBarInfo {
 template <dev::motor M1, dev::motor M2>
 class FiveBar : 
     public spt::immovable_base, 
-    public spt::not_copyable_base,
-    public FiveBarInfo<M1, M2> {
-public:
-    M1::dev_type motor1 { FiveBarInfo<M1, M2>::motor1 };
-    M2::dev_type motor2 { FiveBarInfo<M1, M2>::motor2 };
-
+    public spt::not_copyable_base {
 private:
-    const float l_a { FiveBarInfo<M1, M2>::l_a };
-    const float l_b { FiveBarInfo<M1, M2>::l_b };
-    const float l_c { FiveBarInfo<M1, M2>::l_c };
+    const FiveBarInfo<M1, M2>& info_;
+
+public:
+    M1::dev_type motor1 { info_.motor1 };
+    M2::dev_type motor2 { info_.motor2 };
+
+    const float l_a { info_.l_a };
+    const float l_b { info_.l_b };
+    const float l_c { info_.l_c };
 
     float l {};
     float dot_l {};
@@ -41,8 +46,7 @@ private:
     Eigen::Matrix<float, 2, 2> jacobian_trans;
 
 public:
-    explicit FiveBar(const FiveBarInfo<M1, M2>& info) : 
-        FiveBarInfo<M1, M2> { info } {}
+    explicit FiveBar(const FiveBarInfo<M1, M2>& info) : info_ { info } {}
 
     auto length() const { return l; }
     auto dot_length() const { return dot_l; }

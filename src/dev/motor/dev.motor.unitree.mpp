@@ -40,7 +40,7 @@ public:
     using io_type = io::Serial::Info;
 private:
     struct TrivInfo {
-        const io_type& io;
+        io_type io;
         std::byte id;
         enum type type;
         enum motor::dir dir;
@@ -57,7 +57,7 @@ public:
 
 private:
     enum state state_ { state::normal };
-    const Info& info_;
+    const Info info_;
     const std::array<std::byte, 3> rx_key { 0xfd_b, 0xee_b, info_.id | (static_cast<std::byte>(mode::foc) << 4) };
     struct [[gnu::packed]] {
         std::array<std::byte, 3> tx_key;

@@ -4,7 +4,8 @@ import std;
 import :support;
 
 export namespace robo::ctrl {
-struct pid {
+class pid {
+public:
     struct param {
         float kp;
         float ki;
@@ -13,23 +14,25 @@ struct pid {
         float max_out;
     };
 
-    const struct param param;
+private:
+    const param param_;
     std::array<float, 2> error {};
     float i_out {};
 
-    pid(const struct param& param) : param { param } {}
+public:
+    pid(const param& param_) : param_ { param_ } {}
 
     float calc(const float err) {
         error[1] = error[0];
         error[0] = err;
 
-        float p_out = param.kp * error[0];
-        float d_out = param.kd * (error[0] - error[1]);
-        i_out += param.ki * error[0];
-        math::abs_limit(i_out, param.max_iout);
+        float p_out = param_.kp * error[0];
+        float d_out = param_.kd * (error[0] - error[1]);
+        i_out += param_.ki * error[0];
+        math::abs_limit(i_out, param_.max_iout);
 
         float out = p_out + i_out + d_out;
-        math::abs_limit(out, param.max_out);
+        math::abs_limit(out, param_.max_out);
         return out;
     }
     float calc(const float set, const float feedback) {

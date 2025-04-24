@@ -15,14 +15,14 @@ public:
     using io_type = io::Serial::Info;
     struct Info {
         using dev_type = Dm;
-        const io_type& io;
+        io_type io;
         // TODO install_angle
     };
 
     static constexpr std::size_t rx_size { 17 };
 
 private:
-    const io_type& io_;
+    const io_type io_;
     
 public:
     explicit Dm(const Info& info) : dev::Imu { 10ms }, io_ { info.io } {

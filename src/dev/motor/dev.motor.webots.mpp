@@ -22,7 +22,7 @@ public:
     };
 
 private:
-    const Info& info_;
+    const Info info_;
     ::WbDeviceTag motor_tag_;
     ::WbDeviceTag encoder_tag_;
     float angle_last_ {};

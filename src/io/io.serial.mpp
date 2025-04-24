@@ -39,7 +39,7 @@ public:
         using owner_type = SerialImpl;
     
         std::string_view name;
-        const spt::task_context::continuous::info& context;
+        spt::task_context::continuous::info context;
         std::chrono::nanoseconds rx_idle_duration;
         std::size_t rx_buffer_size;
         baud_rate baud_rate;

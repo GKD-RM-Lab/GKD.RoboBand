@@ -1,8 +1,8 @@
 export module robo:ctrl;
 
 export import :ctrl.basic;
-export import :ctrl.five_bar;
-export import :ctrl.chassis.wheel_legged;
+export import :ctrl.leg;
+export import :ctrl.chassis.wheel_leg;
 
 export namespace robo {
 namespace chassis = robo::ctrl::chassis;

@@ -119,7 +119,7 @@ public:
         using key_type = unsigned int;
         using owner_type = continuous_impl;
 
-        const key_type id;
+        key_type id;
 
         [[nodiscard]]
         auto key() const { return id; }
@@ -213,7 +213,7 @@ public:
         using key_type = unsigned int;
         using owner_type = periodic_impl;
 
-        const key_type id;
+        key_type id;
 
         [[nodiscard]]
         auto key() const { return id; }
@@ -228,7 +228,7 @@ private:
     bool started_ { false };
     bool finishing_ { false };
     bool finished_ { false };
-    info info_;
+    const info info_;
     std::vector<std::pair<std::chrono::nanoseconds, std::function<void()>>> tasks_ {};
     std::jthread thread_ { [this] { run(); } };
 

@@ -1,9 +1,0 @@
-export module robo:ctrl.chassis.wheel_legged;
-
-import std;
-import :ctrl.five_bar;
-
-export namespace robo::ctrl::chassis {
-
-} // namespace robo::ctrl::chassis
-
