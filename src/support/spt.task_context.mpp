@@ -197,6 +197,11 @@ consteval auto make() -> std::array<info, N> {
 consteval auto make() -> info {
     return info{ 0 };
 }
+
+[[nodiscard]]
+consteval auto none() -> info {
+    return info{ std::numeric_limits<unsigned>::max() };
+}
 } // namespace continuous
 
 ///////////////////////////////////////////
@@ -297,6 +302,11 @@ consteval auto make() -> std::array<info, N> {
 [[nodiscard]]
 consteval auto make() -> info {
     return info{ 0 };
+}
+
+[[nodiscard]]
+consteval auto none() -> info {
+    return info{ std::numeric_limits<unsigned>::max() };
 }
 } // namespace periodic
 

@@ -14,7 +14,7 @@ class WheelLeg final :
     public spt::immovable_base, 
     public spt::not_copyable_base {
 private:
-    WheelLegInfo<WL> info_;
+    const WheelLegInfo<WL>& info_;
     WL::ctrl_type wheel_leg { info_.wheel_leg };
     
 public:

@@ -2,5 +2,7 @@ export module robo;
 
 export import :dev;
 export import :io;
+export import :ctrl;
+export import :bot;
 export import :spt;
 

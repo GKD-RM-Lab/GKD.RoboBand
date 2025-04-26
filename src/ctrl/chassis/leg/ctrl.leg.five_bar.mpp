@@ -15,6 +15,13 @@ class FiveBar;
 template <dev::motor M1, dev::motor M2>
 struct FiveBarInfo {
     using ctrl_type = FiveBar<M1, M2>;
+    static constexpr bool use_webots = [] {
+        bool m1 = std::same_as<M1, motor::Webots::Info>;
+        bool m2 = std::same_as<M2, motor::Webots::Info>;
+        if (m1 and m2) return true;
+        if (not m1 and not m2) return false;
+        throw std::logic_error{ "mixing webots types and real types." };
+    }();
 
     M1 motor1;
     M2 motor2;

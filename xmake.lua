@@ -72,8 +72,3 @@ if has_config("use_webots") then
     end
 end
 
--- TODO rt
--- after_build(function (target)
---     import("privilege.sudo")
---     sudo.run("setcap CAP_SYS_NICE+eip %s", target:targetfile())
--- end)

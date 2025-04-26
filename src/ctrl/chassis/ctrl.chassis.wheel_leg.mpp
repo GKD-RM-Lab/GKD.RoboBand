@@ -11,15 +11,23 @@ import :ctrl.leg;
 import :spt;
 
 export namespace robo::ctrl::chassis {
-template <ctrl::leg Leg, dev::motor M>
+template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
 class WheelLeg;
 
-template <ctrl::leg Leg, dev::motor M>
-class WheelLegInfo {
-    using ctrl_type = WheelLeg<Leg, M>;
+template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
+struct WheelLegInfo {
+    using ctrl_type = WheelLeg<Imu, Leg, M>;
+    static constexpr bool use_webots = [] {
+        bool leg = Leg::use_webots;
+        bool m = std::same_as<M, motor::Webots::Info>;
+        if (leg and m) return true;
+        if (not leg and not m) return false;
+        throw std::logic_error{ "mixing webots types and real types." };
+    }();
 
     spt::task_context::periodic::info context;
 
+    Imu imu;
     Leg leg_left;
     Leg leg_right;
     M wheel_left;
@@ -29,12 +37,12 @@ class WheelLegInfo {
     ctrl::pid::param pid_l;
 };
 
-template <ctrl::leg Leg, dev::motor M>
+template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
 class WheelLeg final :
     public spt::immovable_base, 
     public spt::not_copyable_base {
 private:
-    const WheelLegInfo<Leg, M>& info_;
+    const WheelLegInfo<Imu, Leg, M>& info_;
 
     bool started_ { false };
 
@@ -46,14 +54,19 @@ private:
     ctrl::pid pid_l { info_.pid_l };
     
 public:
-    Leg::ctrl_type leg_left  { info_.leg_left };
-    Leg::ctrl_type leg_right { info_.leg_right };
-    M::dev_type    wheel_left   { info_.wheel_left };
-    M::dev_type    wheel_right  { info_.wheel_right };
+    Imu::dev_type  imu         { info_.imu };
+    Leg::ctrl_type leg_left    { info_.leg_left };
+    Leg::ctrl_type leg_right   { info_.leg_right };
+    M::dev_type    wheel_left  { info_.wheel_left };
+    M::dev_type    wheel_right { info_.wheel_right };
 
-    explicit WheelLeg(const WheelLeg<Leg, M>& info) : 
+    explicit WheelLeg(const WheelLegInfo<Imu, Leg, M>& info) : 
         info_ { info } {
-        spt::task_context::add_task(info_.context, [this] { ctrl_loop(); });
+        if constexpr (WheelLegInfo<Imu, Leg, M>::use_webots) {
+            spt::task_context::add_task(spt::task_context::webots::type::ctrl, [this] { ctrl_loop(); });
+        } else {
+            spt::task_context::add_task(info_.context, [this] { ctrl_loop(); });
+        }
     }
 
     void run() { started_ = true; };
@@ -62,7 +75,6 @@ public:
 private:
     void ctrl_loop() {
         if (started_) {
-            
         }
     }
 };
