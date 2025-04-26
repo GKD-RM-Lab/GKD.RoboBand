@@ -26,6 +26,7 @@ struct WheelLegInfo {
     }();
 
     spt::task_context::periodic::info context;
+    std::chrono::nanoseconds ctrl_period;
 
     Imu imu;
     Leg leg_left;
@@ -62,11 +63,7 @@ public:
 
     explicit WheelLeg(const WheelLegInfo<Imu, Leg, M>& info) : 
         info_ { info } {
-        if constexpr (WheelLegInfo<Imu, Leg, M>::use_webots) {
-            spt::task_context::add_task(spt::task_context::webots::type::ctrl, [this] { ctrl_loop(); });
-        } else {
-            spt::task_context::add_task(info_.context, [this] { ctrl_loop(); });
-        }
+        spt::task_context::add_task(info_.context, info_.ctrl_period, [this] { ctrl_loop(); });
     }
 
     void run() { started_ = true; };

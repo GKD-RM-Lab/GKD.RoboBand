@@ -5,8 +5,12 @@ export import :spt.math;
 export import :spt.crc;
 export import :spt.task_context;
 export import :spt.multiton;
+#ifdef USE_WEBOTS
+export import :spt.webots;
+#endif
 
 export namespace robo {
+namespace task_context = spt::task_context;
 namespace math = spt::math;
 namespace crc8 = spt::crc8;
 namespace crc16 = spt::crc16;

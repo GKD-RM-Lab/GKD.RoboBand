@@ -1,129 +1,83 @@
-#ifdef USE_WEBOTS
-module;
-
-#include <webots/robot.h>
-
-#endif
 export module robo:spt.task_context;
 
 import std;
 import :spt.misc;
 import :spt.multiton;
+#ifdef USE_WEBOTS
+import :spt.webots;
+#endif
 namespace stdv = std::views;
 namespace stdr = std::ranges;
 using namespace std::chrono_literals;
 
-export namespace robo {
-namespace spt {
-#ifdef USE_WEBOTS
+export namespace robo::spt::task_context {
 ///////////////////////////////////////////
-// webots
-//     webots(func, args...)
-//     webots.initialized() -> bool
-//     webots.basic_time_step() -> float
+// task_context base
 ///////////////////////////////////////////
 namespace detail {
-class webots_impl :
-    public spt::immovable_base, 
-    public spt::not_copyable_base {
+struct info_base {
+    using key_type = unsigned int;
+
+    key_type id;
+
+    [[nodiscard]]
+    auto key() const { return id; }
+
 private:
-    float basic_time_step_ {};
-    bool initialized_ { false };
+    consteval info_base(const key_type id) : id { id } {}
 
 public:
-    ~webots_impl() {
-        // if (initialized_) wb_robot_cleanup(); // TODO CRASH
+    template <std::size_t N> requires (N > 1)
+    [[nodiscard]]
+    static consteval auto make() -> std::array<info_base, N> {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return std::array<info_base, N>{ info_base{I}... };
+        }(std::make_index_sequence<N>{});
+    }
+    [[nodiscard]]
+    static consteval auto make() -> info_base {
+        return info_base{ 0 };
     }
 
-    bool initialized() const { return initialized_; }
-    float basic_time_step() const { return basic_time_step_; }
-    decltype(auto) operator()(auto&& func, auto&&... args) {
-        if (not initialized_) {
-            wb_robot_init();
-            basic_time_step_ = static_cast<float>(wb_robot_get_basic_time_step());
-            initialized_ = true;
-        }
-        return func(std::forward<decltype(args)>(args)...);
+#ifdef USE_WEBOTS
+    [[nodiscard]]
+    static consteval auto webots() -> info_base {
+        return info_base{ std::numeric_limits<key_type>::max() };
     }
+    constexpr bool is_for_webots() const {
+        return id == std::numeric_limits<key_type>::max();
+    }
+#endif
 };
-} // namespace detail
-constinit detail::webots_impl webots {};
 
-namespace task_context {
-///////////////////////////////////////////
-// task_context::webots
-///////////////////////////////////////////
-class webots :
-    public spt::immovable_base, 
-    public spt::not_copyable_base {
-public:
-    enum class type {
-        update,
-        ctrl,
-    };
-
-private:
+class impl_base {
+protected:
     bool started_ { false };
     bool finishing_ { false };
     bool finished_ { false };
-    std::jthread thread_ { [this] { run(); } };
-    std::vector<std::function<void()>> update_tasks_ {};
-    std::vector<std::function<void()>> ctrl_tasks_ {};
-
-    webots() = default;
 
 public:
-    static auto get() -> webots& {
-        static webots obj {};
-        return obj;
-    }
-    void add_task(enum type type, spt::invocable_r<void> auto&& task) {
-        if (type == type::update) {
-            update_tasks_.emplace_back(std::forward<decltype(task)>(task));
-        } else {
-            ctrl_tasks_.emplace_back(std::forward<decltype(task)>(task));
-        }
-    }
-    void start() { started_ = true; }
-    void finish() { finishing_ = true; }
-    bool finished() const { return finished_; }
-
-private:
-    bool step() {
-        return spt::webots(wb_robot_step, static_cast<int>(spt::webots.basic_time_step())) != -1;
-    }
-    void run() {
-        while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
-        while (not finishing_ and step()) {
-            for (auto& task : update_tasks_) task();
-            for (auto& task : ctrl_tasks_) task();
-        }
-        finished_ = true;
-    }
+    void finish() noexcept { finishing_ = true; }
+    [[nodiscard]]
+    bool finished() const noexcept { return finished_; }
 };
-} // namespace task_context
-#endif
+} // namespace detail
 
 ///////////////////////////////////////////
 // task_context::continuous
-//    spt::task_context::continuous::make()
 ///////////////////////////////////////////
-namespace task_context {
 namespace continuous {
 namespace detail {
 class continuous_impl : 
     public spt::immovable_base,
-    public spt::not_copyable_base {
+    public spt::not_copyable_base,
+    public task_context::detail::impl_base {
 public:
-    struct info {
-        using key_type = unsigned int;
+    struct info : task_context::detail::info_base {
         using owner_type = continuous_impl;
-
-        key_type id;
-
         [[nodiscard]]
-        auto key() const { return id; }
-        [[nodiscard]]
+        consteval info(task_context::detail::info_base info_base) :
+            task_context::detail::info_base { info_base } {}
         auto desc() const { 
             return std::format("continuous task context (id:{})", id);
         }
@@ -131,9 +85,6 @@ public:
     using info_type = info;
 
 private:
-    bool started_ { false };
-    bool finishing_ { false };
-    bool finished_ { false };
     const info info_;
     std::chrono::nanoseconds idle_duration_ {};
     std::vector<std::function<void()>> tasks_ {};
@@ -168,8 +119,6 @@ public:
         // TODO log
         started_ = true;
     }
-    void finish() noexcept { finishing_ = true; }
-    bool finished() const { return finished_; }
 
 private:
     void run() noexcept {
@@ -185,44 +134,22 @@ private:
 
 using info = struct detail::continuous_impl::info;
 static_assert(spt::info<info>);
-
-template <std::size_t N> requires (N > 1)
-[[nodiscard]]
-consteval auto make() -> std::array<info, N> {
-    return []<std::size_t... I>(std::index_sequence<I...>) {
-        return std::array<info, N>{ info{I}... };
-    }(std::make_index_sequence<N>{});
-}
-[[nodiscard]]
-consteval auto make() -> info {
-    return info{ 0 };
-}
-
-[[nodiscard]]
-consteval auto none() -> info {
-    return info{ std::numeric_limits<unsigned>::max() };
-}
 } // namespace continuous
 
 ///////////////////////////////////////////
 // task_context::periodic
-//    spt::task_context::periodic::make()
 ///////////////////////////////////////////
 namespace periodic {
 namespace detail {
 class periodic_impl : 
     public spt::immovable_base, 
-    public spt::not_copyable_base {
+    public spt::not_copyable_base,
+    public task_context::detail::impl_base {
 public:
-    struct info {
-        using key_type = unsigned int;
+    struct info : task_context::detail::info_base {
         using owner_type = periodic_impl;
-
-        key_type id;
-
-        [[nodiscard]]
-        auto key() const { return id; }
-        [[nodiscard]]
+        consteval info(task_context::detail::info_base info_base) :
+            task_context::detail::info_base { info_base } {}
         auto desc() const { 
             return std::format("periodic task context (id:{})", id);
         }
@@ -230,9 +157,6 @@ public:
     using info_type = info;
 
 private:
-    bool started_ { false };
-    bool finishing_ { false };
-    bool finished_ { false };
     const info info_;
     std::vector<std::pair<std::chrono::nanoseconds, std::function<void()>>> tasks_ {};
     std::jthread thread_ { [this] { run(); } };
@@ -265,21 +189,19 @@ public:
         // TODO log
         started_ = true;
     }
-    void finish() noexcept { finishing_ = true; }
-    bool finished() const { return finished_; }
 
 private:
     void run() noexcept {
         while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
         std::chrono::steady_clock::time_point time {};
-        std::vector<std::chrono::steady_clock::time_point> task_run_time { tasks_.size() };
-        stdr::fill(task_run_time, std::chrono::steady_clock::now());
+        std::vector<std::chrono::steady_clock::time_point> task_run_time;
+        task_run_time.assign_range(stdv::repeat(std::chrono::steady_clock::now(), tasks_.size()));
         while (not finishing_) {
             time = std::chrono::steady_clock::now();
-            for (auto i : stdv::iota(0uz, tasks_.size())) {
-                if (task_run_time[i] > time) {
-                    tasks_[i].second();
-                    task_run_time[i] += tasks_[i].first;
+            for (auto [run_time, task] : stdv::zip(task_run_time, tasks_)) {
+                if (run_time > time) {
+                    task.second();
+                    run_time += task.first;
                 }
             }
             std::this_thread::sleep_until(stdr::min(task_run_time));
@@ -291,41 +213,43 @@ private:
 
 using info = struct detail::periodic_impl::info;
 static_assert(spt::info<info>);
-
-template <std::size_t N> requires (N > 1)
-[[nodiscard]]
-consteval auto make() -> std::array<info, N> {
-    return []<std::size_t... I>(std::index_sequence<I...>) {
-        return std::array<info, N>{ info{I}... };
-    }(std::make_index_sequence<N>{});
-}
-[[nodiscard]]
-consteval auto make() -> info {
-    return info{ 0 };
-}
-
-[[nodiscard]]
-consteval auto none() -> info {
-    return info{ std::numeric_limits<unsigned>::max() };
-}
 } // namespace periodic
 
 ///////////////////////////////////////////
 // task_context
-//     spt::task_context::add_task(info, args...)
-//     spt::task_context::add_task(spt::task_context::webots::type, func)
-//     spt::task_context::start()
-//     spt::task_context::finish()
-//     spt::task_context::finished() -> bool
+//     type:
+//         continuous
+//         periodic
+//     make:
+//         task_context::<type>::info::make()    -> context_info
+//         task_context::<type>::info::make<N>() -> context_info[N]
+//         task_context::<type>::info::webots()  -> context_info_for_webots
+//     usage:
+//         task_context::add_task(info, time, func)
+//         task_context::start()
+//         task_context::finish()
+//         task_context::finished() -> bool
+//         task_context::wait_until_all_finished()
 ///////////////////////////////////////////
-void add_task(auto&& info, auto&&... args) {
-    spt::multiton::get(info).add_task(std::forward<decltype(args)>(args)...);
-}
+void add_task(auto&& info, auto&& time, auto&& func) {
 #ifdef USE_WEBOTS
-void add_task(spt::task_context::webots::type type, auto&&... args) {
-    spt::task_context::webots::get().add_task(type, std::forward<decltype(args)>(args)...);
-}
+    using info_type = std::remove_cvref_t<decltype(info)>;
+    if (info.is_for_webots()) {
+        if constexpr (std::same_as<info_type, continuous::info>) {
+            task_context::webots::add_update_task(std::forward<decltype(func)>(func));
+        } else if constexpr (std::same_as<info_type, periodic::info>) {
+            task_context::webots::add_ctrl_task(time, std::forward<decltype(func)>(func));
+        } else {
+            throw std::logic_error { "wrong type: info." };
+        }
+    } else {
+        spt::multiton::get(info).add_task(time, std::forward<decltype(func)>(func));
+    }
+#else
+    spt::multiton::get(info).add_task(time, std::forward<decltype(func)>(func));
 #endif
+}
+
 void start() {
     for (auto& e : stdv::values(spt::multiton::instances<continuous::info>())) {
         e->start();
@@ -334,9 +258,10 @@ void start() {
         e->start();
     }
 #ifdef USE_WEBOTS
-    if (spt::webots.initialized()) spt::task_context::webots::get().start();
+    if (spt::webots.initialized()) task_context::webots::start();
 #endif
 }
+
 void finish() {
     for (auto& e : stdv::values(spt::multiton::instances<continuous::info>())) {
         e->finish();
@@ -345,9 +270,10 @@ void finish() {
         e->finish();
     }
 #ifdef USE_WEBOTS
-    if (spt::webots.initialized()) spt::task_context::webots::get().finish();
+    if (spt::webots.initialized()) task_context::webots::finish();
 #endif
 }
+
 bool finished() {
     bool ret { true };
     for (auto& e : stdv::values(spt::multiton::instances<continuous::info>())) {
@@ -357,16 +283,15 @@ bool finished() {
         ret &= e->finished();
     }
 #ifdef USE_WEBOTS
-    if (spt::webots.initialized()) ret &= spt::task_context::webots::get().finished();
+    if (spt::webots.initialized()) ret &= task_context::webots::finished();
 #endif
     return ret;
 }
+
 void wait_until_all_finished() {
     while (not finished()) {
         std::this_thread::sleep_for(1ms);
     }
 }
-} // namespace task_context
-} // namespace spt
-} // namespace robo
+} // namespace robo::spt::task_context
 

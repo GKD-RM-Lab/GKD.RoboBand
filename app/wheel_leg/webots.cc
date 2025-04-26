@@ -1,5 +1,6 @@
 import std;
 import robo;
+using namespace std::chrono_literals;
 
 ///////////////////////////////////////////
 // device
@@ -54,7 +55,8 @@ constexpr robo::ctrl::FiveBarInfo leg_r {
 };
 
 constexpr robo::chassis::WheelLegInfo wheel_leg {
-    .context = robo::spt::task_context::periodic::none(),
+    .context = robo::task_context::periodic::info::webots(),
+    .ctrl_period = 1ms,
     .imu = imu,
     .leg_left = leg_l,
     .leg_right = leg_r,

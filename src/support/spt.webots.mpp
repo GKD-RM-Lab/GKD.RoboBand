@@ -1,0 +1,117 @@
+module;
+
+#include <webots/robot.h>
+
+export module robo:spt.webots;
+
+import std;
+import :spt.misc;
+namespace stdv = std::views;
+using namespace std::chrono_literals;
+
+export namespace robo::spt {
+///////////////////////////////////////////
+// webots
+//     webots(func, args...)
+//     webots.initialized() -> bool
+//     webots.basic_time_step() -> float
+///////////////////////////////////////////
+namespace detail {
+class webots_impl :
+    public spt::immovable_base, 
+    public spt::not_copyable_base {
+private:
+    double basic_time_step_ {};
+    bool initialized_ { false };
+
+public:
+    ~webots_impl() {
+        // if (initialized_) wb_robot_cleanup(); // TODO CRASH
+    }
+
+    bool initialized() const { return initialized_; }
+    template <std::integral T>
+    auto basic_time_step() const { return static_cast<T>(std::round(basic_time_step_)); }
+    template <std::floating_point T>
+    auto basic_time_step() const { return static_cast<T>(basic_time_step_); }
+    decltype(auto) operator()(auto&& func, auto&&... args) {
+        if (not initialized_) {
+            wb_robot_init();
+            basic_time_step_ = wb_robot_get_basic_time_step();
+            initialized_ = true;
+        }
+        return func(std::forward<decltype(args)>(args)...);
+    }
+};
+} // namespace detail
+constinit detail::webots_impl webots {};
+
+namespace task_context {
+///////////////////////////////////////////
+// task_context::webots
+///////////////////////////////////////////
+class webots :
+    public spt::immovable_base, 
+    public spt::not_copyable_base {
+private:
+    bool started_ { false };
+    bool finishing_ { false };
+    bool finished_ { false };
+    std::jthread thread_ { [this] { run(); } };
+    std::vector<std::function<void()>> update_tasks_ {};
+    std::vector<std::pair<unsigned, std::function<void()>>> ctrl_tasks_ {};
+
+    webots() = default;
+
+public:
+    static auto get() -> webots& {
+        static webots obj {};
+        return obj;
+    }
+    static void add_update_task(spt::invocable_r<void> auto&& task) {
+        get().update_tasks_.emplace_back(std::forward<decltype(task)>(task));
+    }
+    static void add_ctrl_task(std::chrono::nanoseconds period, spt::invocable_r<void> auto&& task) {
+        if (static_cast<unsigned>(period / (spt::webots.basic_time_step<unsigned>() * 1ms)) != 0) {
+            throw std::logic_error{ "the control period is not an integer multiple of the webots simulation period." };
+        }
+        unsigned cnt = static_cast<unsigned>(period / (spt::webots.basic_time_step<unsigned>() * 1ms));
+        get().ctrl_tasks_.emplace_back(cnt, std::forward<decltype(task)>(task));
+    }
+    static void start() { 
+        auto& obj = get();
+        if (obj.update_tasks_.size() == 0 and obj.ctrl_tasks_.size() == 0) {
+            throw std::logic_error{ 
+                "webots task context has no assigned task."
+            };
+        }
+        // TODO log
+        obj.started_ = true;
+    }
+    static void finish() { get().finishing_ = true; }
+    static bool finished() { return get().finished_; }
+
+private:
+    bool step() const {
+        return spt::webots(wb_robot_step, spt::webots.basic_time_step<int>()) != -1;
+    }
+    void run() {
+        while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
+        std::vector<unsigned> ctrl_tasks_cnt;
+        ctrl_tasks_cnt.assign_range(stdv::repeat(0, ctrl_tasks_.size()));
+        while (not finishing_ and step()) {
+            for (auto& task : update_tasks_) task();
+            for (auto [cnt, task] : stdv::zip(ctrl_tasks_cnt, ctrl_tasks_)) {
+                cnt++;
+                if (cnt >= task.first) {
+                    cnt = 0;
+                    task.second();
+                }
+            }
+        }
+        finished_ = true;
+    }
+};
+} // namespace task_context
+} // namespace robo::spt
+

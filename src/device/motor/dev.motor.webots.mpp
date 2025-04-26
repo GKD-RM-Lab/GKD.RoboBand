@@ -34,11 +34,11 @@ public:
         info_ { info },
         motor_tag_ { spt::webots(wb_robot_get_device, std::string{info.name}.c_str()) },
         encoder_tag_ { spt::webots(wb_motor_get_position_sensor, motor_tag_) } {
-        spt::webots(wb_position_sensor_enable, encoder_tag_, static_cast<int>(spt::webots.basic_time_step()));
-        spt::task_context::add_task(spt::task_context::webots::type::update, [this] {
+        spt::webots(wb_position_sensor_enable, encoder_tag_, spt::webots.basic_time_step<int>());
+        spt::task_context::webots::add_update_task([this] {
             float angle_temp = static_cast<float>(spt::webots(wb_position_sensor_get_value, encoder_tag_));
             angle_ = static_cast<float>(info_.dir) * angle_temp - angle_offset_;
-            speed_ = (angle_ - angle_last_) / (spt::webots.basic_time_step() * 0.001f);
+            speed_ = (angle_ - angle_last_) / (spt::webots.basic_time_step<float>() * 0.001f);
             angle_last_ = angle_;
         });
     }
