@@ -21,7 +21,7 @@ constexpr robo::motor::Webots::Info wheel_r {
 };
 constexpr robo::motor::Webots::Info joint_l1 {
     .name = "motor1",
-    .dir = robo::motor::dir::forward,
+    .dir = robo::motor::dir::reverse,
 };
 constexpr robo::motor::Webots::Info joint_l2 {
     .name = "motor3",
@@ -29,7 +29,7 @@ constexpr robo::motor::Webots::Info joint_l2 {
 };
 constexpr robo::motor::Webots::Info joint_r1 {
     .name = "motor2",
-    .dir = robo::motor::dir::forward,
+    .dir = robo::motor::dir::reverse,
 };
 constexpr robo::motor::Webots::Info joint_r2 {
     .name = "motor4",
@@ -42,20 +42,19 @@ constexpr robo::motor::Webots::Info joint_r2 {
 constexpr robo::ctrl::FiveBarInfo leg_l {
     .motor1 = joint_l1,
     .motor2 = joint_l2,
-    .l_a = 1.0f,
-    .l_b = 1.0f,
-    .l_c = 1.0f,
+    .l_a = 0.06f,
+    .l_b = 0.2f,
+    .l_c = 0.3f,
 };
 constexpr robo::ctrl::FiveBarInfo leg_r {
     .motor1 = joint_r1,
     .motor2 = joint_r2,
-    .l_a = 1.0f,
-    .l_b = 1.0f,
-    .l_c = 1.0f,
+    .l_a = 0.06f,
+    .l_b = 0.2f,
+    .l_c = 0.3f,
 };
 
 constexpr robo::chassis::WheelLegInfo wheel_leg {
-    .context = robo::task_context::periodic::info::webots(),
     .ctrl_period = 1ms,
     .imu = imu,
     .leg_left = leg_l,
@@ -64,11 +63,11 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
     .wheel_right = wheel_r,
     .f_gravity = 0.0f,
     .pid_l = {
-        .kp = 0.0f,
+        .kp = 500.0f,
         .ki = 0.0f,
-        .kd = 0.0f,
-        .max_iout = 0.0f,
-        .max_out = 0.0f,
+        .kd = 10000.0f,
+        .max_iout = 5.0f,
+        .max_out = 20.0f,
     },
 };
 

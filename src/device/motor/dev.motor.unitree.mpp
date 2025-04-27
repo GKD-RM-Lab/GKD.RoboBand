@@ -96,13 +96,14 @@ public:
         io::send(info_.io, tx_data);
     }
     
-    void setAngelOffset(float offset) {
+    void setAngleOffset(float offset) {
         angle_offset_ = offset;
     }
-    void setAngel(float current_angle) {
+    void setAngle(float current_angle) {
         angle_offset_ = angle_ - current_angle;
     }
 
+private:
     void callback(auto bytes) {
         struct [[gnu::packed]] {
             std::array<std::byte, 3> key;

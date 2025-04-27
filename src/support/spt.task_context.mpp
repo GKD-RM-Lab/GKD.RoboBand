@@ -47,6 +47,9 @@ public:
     constexpr bool is_for_webots() const {
         return id == std::numeric_limits<key_type>::max();
     }
+    constexpr bool test(bool use_webots) const {
+        return not ((use_webots and not is_for_webots()) or (not use_webots and is_for_webots()));
+    }
 #endif
 };
 

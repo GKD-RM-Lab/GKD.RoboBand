@@ -23,6 +23,7 @@ class webots_impl :
 private:
     double basic_time_step_ {};
     bool initialized_ { false };
+    unsigned long long time_ { 0 };
 
 public:
     ~webots_impl() {
@@ -41,6 +42,13 @@ public:
             initialized_ = true;
         }
         return func(std::forward<decltype(args)>(args)...);
+    }
+    bool step() {
+        time_ += basic_time_step<unsigned long long>();
+        return operator()(wb_robot_step, basic_time_step<int>()) != -1;
+    }
+    auto time() const {
+        return time_ * 1ms;
     }
 };
 } // namespace detail
@@ -72,10 +80,10 @@ public:
         get().update_tasks_.emplace_back(std::forward<decltype(task)>(task));
     }
     static void add_ctrl_task(std::chrono::nanoseconds period, spt::invocable_r<void> auto&& task) {
-        if (static_cast<unsigned>(period / (spt::webots.basic_time_step<unsigned>() * 1ms)) != 0) {
+        unsigned cnt = static_cast<unsigned>(period / (spt::webots.basic_time_step<unsigned>() * 1ms));
+        if ((period - (spt::webots.basic_time_step<unsigned>() * cnt * 1ms)) != 0ns or cnt == 0) {
             throw std::logic_error{ "the control period is not an integer multiple of the webots simulation period." };
         }
-        unsigned cnt = static_cast<unsigned>(period / (spt::webots.basic_time_step<unsigned>() * 1ms));
         get().ctrl_tasks_.emplace_back(cnt, std::forward<decltype(task)>(task));
     }
     static void start() { 
@@ -92,14 +100,11 @@ public:
     static bool finished() { return get().finished_; }
 
 private:
-    bool step() const {
-        return spt::webots(wb_robot_step, spt::webots.basic_time_step<int>()) != -1;
-    }
     void run() {
         while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
         std::vector<unsigned> ctrl_tasks_cnt;
         ctrl_tasks_cnt.assign_range(stdv::repeat(0, ctrl_tasks_.size()));
-        while (not finishing_ and step()) {
+        while (not finishing_ and spt::webots.step()) {
             for (auto& task : update_tasks_) task();
             for (auto [cnt, task] : stdv::zip(ctrl_tasks_cnt, ctrl_tasks_)) {
                 cnt++;

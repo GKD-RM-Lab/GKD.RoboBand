@@ -17,6 +17,7 @@ class WheelLeg;
 template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
 struct WheelLegInfo {
     using ctrl_type = WheelLeg<Imu, Leg, M>;
+#ifdef USE_WEBOTS
     static constexpr bool use_webots = [] {
         bool leg = Leg::use_webots;
         bool m = std::same_as<M, motor::Webots::Info>;
@@ -25,7 +26,13 @@ struct WheelLegInfo {
         throw std::logic_error{ "mixing webots types and real types." };
     }();
 
+    spt::task_context::periodic::info context {
+        spt::task_context::periodic::info::webots()
+    };
+#else
     spt::task_context::periodic::info context;
+#endif
+
     std::chrono::nanoseconds ctrl_period;
 
     Imu imu;
@@ -49,9 +56,9 @@ private:
 
     const float f_gravity { info_.f_gravity };
     const std::array<float, 8> trans_arr { 
-        1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f
+        1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1.0f, 1.0f
     };
-    const Eigen::Map<const Eigen::Matrix<float, 4, 2>> trans { trans_arr.data() };
+    const Eigen::Map<const Eigen::Matrix<float, 2, 4>> trans { trans_arr.data() };
     ctrl::pid pid_l { info_.pid_l };
     
 public:
@@ -63,15 +70,44 @@ public:
 
     explicit WheelLeg(const WheelLegInfo<Imu, Leg, M>& info) : 
         info_ { info } {
+#ifdef USE_WEBOTS
+        if (not info_.context.test(WheelLegInfo<Imu, Leg, M>::use_webots)) {
+            throw std::logic_error{ "wrong context type." };
+        }
+#endif
         spt::task_context::add_task(info_.context, info_.ctrl_period, [this] { ctrl_loop(); });
     }
 
     void run() { started_ = true; };
     void init() {}
+#ifdef USE_WEBOTS
+    void init() requires WheelLegInfo<Imu, Leg, M>::use_webots {
+        leg_left.motor1.setAngle(std::numbers::pi_v<float> + 0.305426f);
+        leg_left.motor2.setAngle(std::numbers::pi_v<float> + 0.305426f);
+        leg_right.motor1.setAngle(std::numbers::pi_v<float> + 0.305426f);
+        leg_right.motor2.setAngle(std::numbers::pi_v<float> + 0.305426f);
+    }
+#endif
 
 private:
     void ctrl_loop() {
         if (started_) {
+            leg_left.update();
+            leg_right.update();
+
+            float f_phi {};
+            float f_l {};
+            float f_inertial {};
+
+            // TODO not l but h
+            float l_set = 0.25f;
+            f_l = pid_l(l_set, 0.5f * (leg_left.length().first + leg_right.length().first));
+
+            Eigen::Vector<float, 4> f_ctrl { f_phi, f_l, f_gravity, f_inertial };
+            auto f_n = trans * f_ctrl;
+
+            leg_left.setForce(f_n(0), 0.0f);
+            leg_right.setForce(f_n(1), 0.0f);
         }
     }
 };

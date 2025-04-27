@@ -9,7 +9,7 @@ export module robo:dev.motor.webots;
 import std;
 import :dev.motor.base;
 import :io;
-import :spt.task_context;
+import :spt;
 
 export namespace robo::motor {
 class Webots : public dev::Motor {
@@ -23,17 +23,16 @@ public:
 
 private:
     const Info info_;
-    ::WbDeviceTag motor_tag_;
-    ::WbDeviceTag encoder_tag_;
+    ::WbDeviceTag motor_tag_ { spt::webots(wb_robot_get_device, std::string{info_.name}.c_str()) };
+    ::WbDeviceTag encoder_tag_ { spt::webots(wb_motor_get_position_sensor, motor_tag_) };
+    float torque_max_ { static_cast<float>(spt::webots(wb_motor_get_max_torque, motor_tag_)) };
     float angle_last_ {};
     float angle_offset_ {};
 
 public:
     explicit Webots(const Info& info) :
         Motor { std::chrono::nanoseconds::max() },
-        info_ { info },
-        motor_tag_ { spt::webots(wb_robot_get_device, std::string{info.name}.c_str()) },
-        encoder_tag_ { spt::webots(wb_motor_get_position_sensor, motor_tag_) } {
+        info_ { info } {
         spt::webots(wb_position_sensor_enable, encoder_tag_, spt::webots.basic_time_step<int>());
         spt::task_context::webots::add_update_task([this] {
             float angle_temp = static_cast<float>(spt::webots(wb_position_sensor_get_value, encoder_tag_));
@@ -43,14 +42,14 @@ public:
         });
     }
 
-    void setAngelOffset(float offset) {
+    void setAngleOffset(float offset) {
         angle_offset_ = offset;
     }
-    void setAngel(float current_angle) {
+    void setAngle(float current_angle) {
         angle_offset_ = angle_ - current_angle;
     }
     void setTorque(float torque) {
-        spt::webots(wb_motor_set_torque, motor_tag_, static_cast<double>(torque));
+        spt::webots(wb_motor_set_torque, motor_tag_, static_cast<double>(info_.dir) * static_cast<double>(math::abs_limited(torque, torque_max_)));
     }
 };
 static_assert(dev::motor<Webots::Info>);

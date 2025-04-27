@@ -1,4 +1,6 @@
 set_defaultmode("debug")
+set_policy("run.autobuild", true)
+
 add_rules("mode.debug")
 add_rules("mode.releasedbg")
 add_rules("mode.release")
