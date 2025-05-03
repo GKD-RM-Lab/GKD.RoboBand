@@ -85,15 +85,15 @@ public:
         // calculate jacobian_trans
         float varphi_B_2 = std::atan2(y_C - y_B_2, x_C - x_B_2);
         jacobian_trans << -l_b * std::cos(theta_l + varphi_B_2) * std::sin(varphi_1 - varphi_B_1),
-                          l_b / l * std::sin(theta_l + varphi_B_2) * std::sin(varphi_1 - varphi_B_1),
                           -l_b * std::cos(theta_l - varphi_B_1) * std::sin(varphi_2 - varphi_B_2),
+                          l_b / l * std::sin(theta_l + varphi_B_2) * std::sin(varphi_1 - varphi_B_1),
                           l_b / l * std::sin(theta_l - varphi_B_1) * std::sin(varphi_2 - varphi_B_2);
         jacobian_trans /= std::sin(varphi_B_1 + varphi_B_2);
 
         // joint space to task space : update dot_l dot_theta_l
         Eigen::Vector<float, 2> joint;
         Eigen::Vector<float, 2> task;
-        joint << varphi_1, varphi_2;
+        joint << motor1.speed(), motor2.speed();
         task = jacobian_trans * joint;
         dot_l = task(0);
         dot_theta_l = task(1);
@@ -104,7 +104,7 @@ public:
         Eigen::Vector<float, 2> force_actual;
 
         force_virtual << f_n, tau_j;
-        force_actual = jacobian_trans * force_virtual;
+        force_actual = jacobian_trans.transpose() * force_virtual;
 
         motor1.setTorque(force_actual(0));
         motor2.setTorque(force_actual(1));

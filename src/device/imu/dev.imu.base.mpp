@@ -4,6 +4,14 @@ import std;
 import :dev.base;
 
 export namespace robo {
+namespace imu {
+enum class axis : std::size_t {
+    roll  = 0,
+    pitch = 1,
+    yaw   = 2,
+};
+} // namespace imu
+
 namespace dev {
 struct Imu : public Dev {
 protected:
@@ -17,6 +25,9 @@ public:
     auto acc() const { return std::span{ acc_ }; }
     auto gyro() const { return std::span{ gyro_ }; }
     auto angle() const { return std::span{ angle_ }; }
+    float acc(const imu::axis axis) const { return acc_[std::to_underlying(axis)]; }
+    float gyro(const imu::axis axis) const { return gyro_[std::to_underlying(axis)]; }
+    float angle(const imu::axis axis) const { return angle_[std::to_underlying(axis)]; }
 };
 
 template <typename T>

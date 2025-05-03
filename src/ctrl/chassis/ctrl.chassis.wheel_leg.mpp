@@ -26,9 +26,7 @@ struct WheelLegInfo {
         throw std::logic_error{ "mixing webots types and real types." };
     }();
 
-    spt::task_context::periodic::info context {
-        spt::task_context::periodic::info::webots()
-    };
+    spt::task_context::periodic::info context { spt::task_context::periodic::info::webots() };
 #else
     spt::task_context::periodic::info context;
 #endif
@@ -42,46 +40,62 @@ struct WheelLegInfo {
     M wheel_right;
 
     float f_gravity;
+    float wheel_radius;
+
+    float s_ref_max;
+    float phi_ref_max;
+    float theta_l_ref_max;
+    float theta_b_ref_max;
+    
+    std::array<float, 40> K;
     ctrl::pid::param pid_l;
+    ctrl::pid::param pid_psi;
 };
 
 template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
 class WheelLeg final :
     public spt::immovable_base, 
-    public spt::not_copyable_base {
-private:
-    const WheelLegInfo<Imu, Leg, M>& info_;
+    public spt::not_copyable_base,
+    private WheelLegInfo<Imu, Leg, M> {
+public: 
+    using WheelLegInfo = WheelLegInfo<Imu, Leg, M>;
 
+private:
     bool started_ { false };
 
-    const float f_gravity { info_.f_gravity };
-    const std::array<float, 8> trans_arr { 
-        1.0f, -1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1.0f, 1.0f
-    };
-    const Eigen::Map<const Eigen::Matrix<float, 2, 4>> trans { trans_arr.data() };
-    ctrl::pid pid_l { info_.pid_l };
-    
-public:
-    Imu::dev_type  imu         { info_.imu };
-    Leg::ctrl_type leg_left    { info_.leg_left };
-    Leg::ctrl_type leg_right   { info_.leg_right };
-    M::dev_type    wheel_left  { info_.wheel_left };
-    M::dev_type    wheel_right { info_.wheel_right };
+    const Eigen::Matrix<float, 2, 4, Eigen::RowMajor> trans { std::array{
+        1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f
+    }.data() };
+    const Eigen::Matrix<float, 4, 10, Eigen::RowMajor> K { WheelLegInfo::K.data() };
 
-    explicit WheelLeg(const WheelLegInfo<Imu, Leg, M>& info) : 
-        info_ { info } {
+    ctrl::pid pid_l { WheelLegInfo::pid_l };
+    ctrl::pid pid_psi { WheelLegInfo::pid_psi };
+
+    Eigen::Vector<float, 10> state_ref;
+    Eigen::Vector<float, 10> state_set;
+    Eigen::Vector<float, 4> ctrl_vec;
+
+public:
+    Imu::dev_type  imu         { WheelLegInfo::imu };
+    Leg::ctrl_type leg_left    { WheelLegInfo::leg_left };
+    Leg::ctrl_type leg_right   { WheelLegInfo::leg_right };
+    M::dev_type    wheel_left  { WheelLegInfo::wheel_left };
+    M::dev_type    wheel_right { WheelLegInfo::wheel_right };
+
+    explicit WheelLeg(const WheelLegInfo& info) : 
+        WheelLegInfo { info } {
 #ifdef USE_WEBOTS
-        if (not info_.context.test(WheelLegInfo<Imu, Leg, M>::use_webots)) {
+        if (not this->context.test(WheelLegInfo::use_webots)) {
             throw std::logic_error{ "wrong context type." };
         }
 #endif
-        spt::task_context::add_task(info_.context, info_.ctrl_period, [this] { ctrl_loop(); });
+        spt::task_context::add_task(this->context, this->ctrl_period, [this] { ctrl_loop(); });
     }
 
     void run() { started_ = true; };
     void init() {}
 #ifdef USE_WEBOTS
-    void init() requires WheelLegInfo<Imu, Leg, M>::use_webots {
+    void init() requires WheelLegInfo::use_webots {
         leg_left.motor1.setAngle(std::numbers::pi_v<float> + 0.305426f);
         leg_left.motor2.setAngle(std::numbers::pi_v<float> + 0.305426f);
         leg_right.motor1.setAngle(std::numbers::pi_v<float> + 0.305426f);
@@ -90,24 +104,61 @@ public:
 #endif
 
 private:
+    void state_update() {
+        leg_left.update();
+        leg_right.update();
+    
+        // TODO reset s
+        // TODO s varphi_C
+        float s = (wheel_left.angle() + wheel_right.angle()) * this->wheel_radius / 2.0f;
+        float dot_s = (wheel_left.speed() + wheel_right.speed()) * this->wheel_radius / 2.0f;
+        float phi = imu.angle(imu::axis::yaw);
+        float dot_phi = imu.gyro(imu::axis::yaw);
+        float theta_b = imu.angle(imu::axis::pitch);
+        float dot_theta_b = imu.gyro(imu::axis::pitch);
+        float theta_l_1 = leg_left.angle().first + theta_b;
+        float theta_l_2 = leg_right.angle().first + theta_b;
+        float dot_theta_l_1 = leg_left.angle().second + dot_theta_b;
+        float dot_theta_l_2 = leg_right.angle().second + dot_theta_b;
+
+        math::abs_limit(s, this->s_ref_max);
+        math::abs_limit(dot_s, 0.2f);
+        math::abs_limit(phi, this->phi_ref_max); // TODO
+        math::abs_limit(theta_l_1, this->theta_l_ref_max);
+        math::abs_limit(theta_l_2, this->theta_l_ref_max);
+        math::abs_limit(theta_b, this->theta_b_ref_max);
+
+        state_ref << s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b;
+    }
+
     void ctrl_loop() {
         if (started_) {
-            leg_left.update();
-            leg_right.update();
+            state_update();
 
-            float f_phi {};
+            state_set.setZero();
+            // TODO rad_format phi
+            ctrl_vec = K * (state_set - state_ref);
+            // TODO limit joint torque (ctrl_vec(2, 3))
+
+            float f_psi {};
             float f_l {};
             float f_inertial {};
 
             // TODO not l but h
-            float l_set = 0.25f;
-            f_l = pid_l(l_set, 0.5f * (leg_left.length().first + leg_right.length().first));
+            float l_set = 0.20f;
+            float l_ref = 0.5f * (leg_left.length().first + leg_right.length().first);
+            f_l = pid_l(l_set, l_ref);
 
-            Eigen::Vector<float, 4> f_ctrl { f_phi, f_l, f_gravity, f_inertial };
+            float psi_ref = imu.angle(imu::axis::roll);
+            f_psi = pid_psi(0.0f, psi_ref);
+
+            Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->f_gravity, f_inertial };
             auto f_n = trans * f_ctrl;
 
-            leg_left.setForce(f_n(0), 0.0f);
-            leg_right.setForce(f_n(1), 0.0f);
+            wheel_left.setTorque(ctrl_vec(0));
+            wheel_right.setTorque(ctrl_vec(1));
+            leg_left.setForce(f_n(0), ctrl_vec(2));
+            leg_right.setForce(f_n(1), ctrl_vec(3));
         }
     }
 };

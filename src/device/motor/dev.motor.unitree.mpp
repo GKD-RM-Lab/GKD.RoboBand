@@ -87,10 +87,19 @@ public:
             on_data(info_.io, rx_key, [this](auto bytes) { callback(bytes); });
     }
 
+    float torque_max() const {
+        switch (info_.type) {
+            using enum type;
+            case type::go_m8010_6: return 23.0f;
+            case type::a1: return 33.0f;
+            case type::b1: return 140.0f;
+        }
+    }
+
     void setTorque(float torque) {
         if (state_ != state::normal) return;
         tx_data.torque_set = static_cast<std::int16_t>(
-            math::abs_limited(torque * static_cast<float>(info_.dir) / reduction_ratio, 127.9f) * 256.0f);
+            math::abs_limited(torque * static_cast<float>(info_.dir) / reduction_ratio, torque_max()) * 256.0f);
         // TODO crc
         tx_data.crc = spt::crc::calc<crc16::ccitt_false>(std::as_bytes(std::span{&tx_data, 1}).first(15));
         io::send(info_.io, tx_data);

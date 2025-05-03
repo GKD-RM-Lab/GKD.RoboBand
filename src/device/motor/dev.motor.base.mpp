@@ -22,6 +22,7 @@ concept motor =
     std::derived_from<typename T::dev_type, Motor> and
     requires(T::dev_type t) {
         { t.setTorque(std::declval<float>()) } -> std::same_as<void>;
+        { t.torque_max() } -> std::same_as<float>;
     };
 
 } // namespace dev

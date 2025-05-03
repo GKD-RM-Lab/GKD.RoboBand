@@ -42,14 +42,17 @@ public:
         });
     }
 
+    float torque_max() const {
+        return torque_max_;
+    }
+    void setTorque(float torque) {
+        spt::webots(wb_motor_set_torque, motor_tag_, static_cast<double>(info_.dir) * static_cast<double>(math::abs_limited(torque, torque_max_)));
+    }
     void setAngleOffset(float offset) {
         angle_offset_ = offset;
     }
     void setAngle(float current_angle) {
         angle_offset_ = angle_ - current_angle;
-    }
-    void setTorque(float torque) {
-        spt::webots(wb_motor_set_torque, motor_tag_, static_cast<double>(info_.dir) * static_cast<double>(math::abs_limited(torque, torque_max_)));
     }
 };
 static_assert(dev::motor<Webots::Info>);
