@@ -15,6 +15,7 @@ export namespace robo::spt::task_context {
 // task_context base
 ///////////////////////////////////////////
 namespace detail {
+template <typename T>
 struct info_base {
     using key_type = unsigned int;
 
@@ -29,14 +30,14 @@ private:
 public:
     template <std::size_t N> requires (N > 1)
     [[nodiscard]]
-    static consteval auto make() -> std::array<info_base, N> {
+    static consteval auto make() -> std::array<T, N> {
         return []<std::size_t... I>(std::index_sequence<I...>) {
-            return std::array<info_base, N>{ info_base{I}... };
+            return std::array<T, N>{ T{I}... };
         }(std::make_index_sequence<N>{});
     }
     [[nodiscard]]
-    static consteval auto make() -> info_base {
-        return info_base{ 0 };
+    static consteval auto make() -> T {
+        return T{ 0 };
     }
 
 #ifdef USE_WEBOTS
@@ -76,11 +77,11 @@ class continuous_impl :
     public spt::not_copyable_base,
     public task_context::detail::impl_base {
 public:
-    struct info : task_context::detail::info_base {
+    struct info : task_context::detail::info_base<info> {
         using owner_type = continuous_impl;
         [[nodiscard]]
-        consteval info(task_context::detail::info_base info_base) :
-            task_context::detail::info_base { info_base } {}
+        consteval info(task_context::detail::info_base<info> info_base) :
+            task_context::detail::info_base<info> { info_base } {}
         auto desc() const { 
             return std::format("continuous task context (id:{})", id);
         }
@@ -89,7 +90,7 @@ public:
 
 private:
     const info info_;
-    std::chrono::nanoseconds idle_duration_ {};
+    std::chrono::nanoseconds idle_duration_ { std::chrono::nanoseconds::max() };
     std::vector<std::function<void()>> tasks_ {};
     std::jthread thread_ { [this] { run(); } };
 
@@ -149,10 +150,10 @@ class periodic_impl :
     public spt::not_copyable_base,
     public task_context::detail::impl_base {
 public:
-    struct info : task_context::detail::info_base {
+    struct info : task_context::detail::info_base<info> {
         using owner_type = periodic_impl;
-        consteval info(task_context::detail::info_base info_base) :
-            task_context::detail::info_base { info_base } {}
+        consteval info(task_context::detail::info_base<info> info_base) :
+            task_context::detail::info_base<info> { info_base } {}
         auto desc() const { 
             return std::format("periodic task context (id:{})", id);
         }
@@ -202,7 +203,7 @@ private:
         while (not finishing_) {
             time = std::chrono::steady_clock::now();
             for (auto [run_time, task] : stdv::zip(task_run_time, tasks_)) {
-                if (run_time > time) {
+                if (time > run_time) {
                     task.second();
                     run_time += task.first;
                 }
@@ -225,7 +226,7 @@ static_assert(spt::info<info>);
 //         periodic
 //     make:
 //         task_context::<type>::info::make()    -> context_info
-//         task_context::<type>::info::make<N>() -> context_info[N]
+//         task_context::<type>::info::make<N>() -> std::array<context_info, N>
 //         task_context::<type>::info::webots()  -> context_info_for_webots
 //     usage:
 //         task_context::add_task(info, time, func)
