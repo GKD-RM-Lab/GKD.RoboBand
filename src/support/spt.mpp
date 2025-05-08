@@ -15,5 +15,6 @@ namespace math = spt::math;
 namespace crc8 = spt::crc8;
 namespace crc16 = spt::crc16;
 namespace crc32 = spt::crc32;
+namespace crc64 = spt::crc64;
 }
 

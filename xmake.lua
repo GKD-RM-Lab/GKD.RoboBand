@@ -74,3 +74,10 @@ if has_config("use_webots") then
     end
 end
 
+target("test") do
+    set_default(false)
+    set_kind("binary")
+    add_deps("src")
+    add_files("app/test.cc")
+end
+

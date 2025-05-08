@@ -6,7 +6,7 @@ import :spt.misc;
 export namespace robo::spt {
 ///////////////////////////////////////////
 // concepts:
-//     owner (impl) : info() info_type                     
+//     owner (impl) : info() info_type
 //     info         : key()  key_type owner_type 
 //     multiton     : get()  key_type owner_type info_type
 // usage:
@@ -35,7 +35,9 @@ concept owner =
 
 namespace detail {
 template <info T>
-struct multiton_impl {
+struct multiton_impl final :
+    public spt::immovable_base,
+    public spt::not_copyable_base {
     using info_type = T;
     using key_type = typename T::key_type;
     using owner_type = typename T::owner_type;
@@ -43,13 +45,6 @@ struct multiton_impl {
 
     static std::mutex mutex_;
     static std::unordered_map<key_type, std::unique_ptr<owner_type>> instances;
-
-    multiton_impl() = default;
-    ~multiton_impl() = default;
-    multiton_impl(const multiton_impl&) = delete;
-    multiton_impl& operator=(const multiton_impl&) = delete;
-    multiton_impl(multiton_impl&&) = delete;
-    multiton_impl& operator=(multiton_impl&&) = delete;
 
     [[nodiscard]]
     static auto get(const info_type& info) -> owner_type& {

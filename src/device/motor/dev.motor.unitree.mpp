@@ -82,8 +82,7 @@ public:
             case type::a1: return 9.10f;
             case type::b1: return 8.66f;
         } }() } {
-        // TODO crc
-        io::with_parser<io::prefix<3>, io::length<rx_size>, io::crc<crc16::ccitt_false>>::
+        io::with_parser<io::prefix<3>, io::length<rx_size>, io::crc<crc16::kermit>>::
             on_data(info_.io, rx_key, [this](auto bytes) { callback(bytes); });
     }
 
@@ -100,8 +99,7 @@ public:
         if (state_ != state::normal) return;
         tx_data.torque_set = static_cast<std::int16_t>(
             math::abs_limited(torque * static_cast<float>(info_.dir) / reduction_ratio, torque_max()) * 256.0f);
-        // TODO crc
-        tx_data.crc = spt::crc::calc<crc16::ccitt_false>(std::as_bytes(std::span{&tx_data, 1}).first(15));
+        tx_data.crc = spt::crc::calc<crc16::kermit>(std::as_bytes(std::span{&tx_data, 1}).first(15));
         io::send(info_.io, tx_data);
     }
     
