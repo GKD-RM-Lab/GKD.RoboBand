@@ -41,6 +41,7 @@ public:
 private:
     struct TrivInfo {
         io_type io;
+        std::chrono::nanoseconds offline_timeout;
         std::byte id;
         enum type type;
         enum motor::dir dir;
@@ -74,7 +75,7 @@ private:
 
 public:
     explicit Unitree(const Info& info) : 
-        dev::Motor { 10ms }, 
+        dev::Motor { info.offline_timeout }, 
         info_ { info },
         tx_data { {0xfe_b, 0xee_b, info_.id | (static_cast<std::byte>(mode::foc) << 4)} },
         reduction_ratio { [type = info_.type] { switch (type) {

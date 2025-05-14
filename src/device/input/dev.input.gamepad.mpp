@@ -1,0 +1,294 @@
+module;
+
+#include <linux/joystick.h>
+#include <cerrno>
+#include <sys/file.h>
+#include <sys/poll.h>
+#include <unistd.h>
+
+export module robo:dev.input.gamepad;
+
+import std;
+import :io.base;
+import :dev.input.base;
+import :spt;
+using namespace std::chrono_literals;
+
+export namespace robo::input {
+class Gamepad final : public dev::Input {
+public:
+    struct Info {
+        std::string_view name;
+        std::chrono::nanoseconds offline_timeout;
+        spt::task_context::continuous::info context;
+
+        [[nodiscard]]
+        auto desc() const {
+            return std::format("gamepad {}", name);
+        }
+    };
+
+private:
+    io::Fd fd_ {};
+    io::state state_ { io::state::offline };
+
+    const Info& info_;
+    std::string identifier_;
+
+    std::function<void(const js_event&)> map_ { nullptr };
+
+    std::function<void()> on_offline_ { nullptr };
+    std::function<void()> on_update_ { nullptr };
+
+    std::array<float, 4> stick_ {};
+
+    struct {
+        std::array<float, 2> data {};
+    
+        float& left { data[0] };
+        float& right { data[1] };
+
+        float& operator[](std::size_t i) { return data[i]; }
+    } trigger_ {};
+
+    struct {
+        std::array<bool, 14> data {};
+
+        struct {
+            bool& A;
+            bool& B;
+            bool& X;
+            bool& Y;
+        } action { data[0], data[1], data[2], data[3] };
+        struct {
+            bool& up;
+            bool& down;
+            bool& left;
+            bool& right;
+        } dir { data[4], data[5], data[6], data[7] };
+        struct {
+            bool& left;
+            bool& right;
+        } bumper { data[8], data[9] };
+        struct {
+            bool& left;
+            bool& right;
+        } function { data[10], data[11] };
+        struct {
+            bool& left;
+            bool& right;
+        } stick { data[12], data[13] };
+
+        bool& operator[](std::size_t i) { return data[i]; }
+    } button_ {};
+
+public: 
+    explicit Gamepad(const Info& info) :
+        dev::Input { info.offline_timeout },
+        info_ { info } {
+        task_context::add_task(info_.context, 1ms, [this] { task(); });
+    }
+    ~Gamepad() = default;
+
+    bool offline() const { return state_ == io::state::working; }
+
+    void on_offline(spt::invocable_r<void> auto&& func) {
+        on_offline_ = std::forward<decltype(func)>(func);
+    }
+    void on_update(spt::invocable_r<void> auto&& func) {
+        on_update_ = std::forward<decltype(func)>(func);
+    }
+
+    auto& identifier() const { return identifier_; } 
+    auto& stick() const { return stick_; }
+    auto& trigger() const { return trigger_; }
+    auto& button() const { return button_; }
+
+private:
+    void open();
+    bool rx_ready();
+    bool read();
+    void task();
+
+    void map_xbox(const js_event& event);
+};
+
+void Gamepad::open() {
+    io::Fd fd { ::open(std::string{info_.name}.c_str(), O_RDWR | O_NOCTTY) };
+
+    if (not fd.is_valid()) {
+        state_ = io::state::offline;
+        throw std::system_error{ errno, std::system_category(), 
+            "failed to open " + info_.desc()
+        };
+    }
+
+    std::string id;
+    id.resize(0xff, '\0');
+    auto ret = ::ioctl(fd, JSIOCGNAME(0xff), id.c_str());
+    if (ret < 0) {
+        state_ = io::state::offline;
+        throw std::system_error{ errno, std::system_category(), 
+            "ioctl failed on " + info_.desc()
+        };
+    }
+    if (id.contains('\0')) id.resize(id.find('\0'));
+    identifier_ = std::move(id);
+    
+    if (identifier_ == "Xbox Wireless Controller" or identifier_ == "Microsoft Xbox Series S|X Controller") {
+        map_ = [this](auto p) { map_xbox(p); };
+    } else {
+        state_ = io::state::error;
+        throw std::logic_error {
+            std::format("unsupported gamepad: {}({}).", identifier_, info_.name)
+        };
+    }
+
+    fd_ = std::move(fd);
+    state_ = io::state::working;
+}
+
+bool Gamepad::rx_ready() {
+    auto pfd = fd_.make_pollfd(POLLIN);
+    timespec ts { 0, 0 };
+
+    bool ready { false };
+    const int ret = ::ppoll(&pfd, 1, &ts, nullptr);
+    if (ret < 0) {
+        state_ = io::state::error;
+        throw std::system_error{ errno, std::system_category(), 
+            "ppoll failed on " + info_.desc()
+        };
+    }
+    if (pfd.revents & ~POLLIN) {
+        const int error_code = [ret = pfd.revents] {
+            if (ret & POLLHUP) return ENODEV;
+            if (ret & POLLNVAL) return EBADF;
+            return EIO;
+        }();
+        state_ = io::state::error;
+        throw std::system_error{ error_code, std::system_category(), 
+            "ppoll failed on " + info_.desc() + std::format(", revents: 0b{:016b}", pfd.revents)
+        };
+    }
+
+    if (pfd.revents & POLLIN) ready = true;
+
+    return ready;
+}
+
+bool Gamepad::read() {
+    js_event event {};
+
+    auto rx_bytes_num = ::read(fd_, &event, sizeof(js_event));
+    if (rx_bytes_num < 0) {
+        state_ = io::state::error;
+        throw std::system_error { errno, std::system_category(), 
+            "read failed on " + info_.desc()
+        };
+    } 
+    if (rx_bytes_num != sizeof(js_event)) {
+        return false;
+    }
+
+    map_(event);
+    if (on_update_) on_update_();
+
+    return true;
+}
+
+void Gamepad::task() {
+    try {
+        switch (state_) {
+            using enum io::state;
+            case offline:
+                if (on_offline_) on_offline_();
+                open();
+                break;
+            case error: [[unlikely]]
+                throw std::logic_error{ "uncaught error on " + info_.desc() };
+                break;
+            case working:
+                if (not rx_ready()) break;
+                read();
+                break;
+        }
+    } catch (const std::system_error& err) {
+        if (not (err.code().category() == std::system_category())) throw;
+        switch (err.code().value()) {
+            case EIO:
+                [[fallthrough]];
+            case EBADF:
+                fd_.close();
+                [[fallthrough]];
+            case ENODEV: 
+                [[fallthrough]];
+            case ENOENT:
+                state_ = io::state::offline;
+                break;
+            default:
+                throw;
+        }
+    }
+}
+
+
+void Gamepad::map_xbox(const js_event& event) {
+    if (event.type == JS_EVENT_AXIS) {
+        switch (event.number) {
+            case 0: [[fallthrough]];
+            case 1:
+                stick_[event.number] = math::map<-1.0f, 1.0f>(event.value);
+                break;
+            case 2:
+                trigger_.left = math::map<0.0f, 1.0f>(event.value);
+                break;
+            case 3: [[fallthrough]];
+            case 4:
+                stick_[event.number - 1] = math::map<-1.0f, 1.0f>(event.value);
+                break;
+            case 5:
+                trigger_.right = math::map<0.0f, 1.0f>(event.value);
+                break;
+            case 6:
+                if (event.value > 0) {
+                    button_.dir.left = false;
+                    button_.dir.right = true;
+                } else {
+                    button_.dir.left = true;
+                    button_.dir.right = false;
+                }
+                break;
+            case 7:
+                if (event.value > 0) {
+                    button_.dir.up = false;
+                    button_.dir.down = true;
+                } else {
+                    button_.dir.up = true;
+                    button_.dir.down = false;
+                }
+                break;
+        }
+    } else if (event.type == JS_EVENT_BUTTON) {
+        switch (event.number) {
+            case 0: [[fallthrough]];
+            case 1: [[fallthrough]];
+            case 2: [[fallthrough]];
+            case 3:
+                button_[event.number] = static_cast<bool>(event.value);
+                break;
+            case 4: [[fallthrough]];
+            case 5: [[fallthrough]];
+            case 6: [[fallthrough]];
+            case 7:
+                button_[event.number + 4] = static_cast<bool>(event.value);
+                break;
+            case 9: [[fallthrough]];
+            case 10:
+                button_[event.number - 3] = static_cast<bool>(event.value);
+                break;
+        }
+    }
+}
+} // namespace robo::input
+

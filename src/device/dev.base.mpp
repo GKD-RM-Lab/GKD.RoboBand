@@ -9,12 +9,12 @@ struct Dev :
     public spt::not_copyable_base {
 protected:
     std::chrono::steady_clock::time_point tick_time_ { std::chrono::steady_clock::now() };
-    const std::chrono::nanoseconds offline_duration_;
+    const std::chrono::nanoseconds offline_timeout_;
 
 public:
-    Dev(const std::chrono::nanoseconds offline_duration) : offline_duration_ { offline_duration } {}
+    Dev(const std::chrono::nanoseconds offline_timeout) : offline_timeout_ { offline_timeout } {}
 
-    bool offline() { return std::chrono::steady_clock::now() - tick_time_ > offline_duration_; }
+    bool offline() { return std::chrono::steady_clock::now() - tick_time_ > offline_timeout_; }
     void tick() { tick_time_ = std::chrono::steady_clock::now(); }
 };
 } // namespace robo::dev

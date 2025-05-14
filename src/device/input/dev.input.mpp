@@ -1,0 +1,5 @@
+export module robo:dev.input;
+
+export import :dev.input.base;
+export import :dev.input.gamepad;
+

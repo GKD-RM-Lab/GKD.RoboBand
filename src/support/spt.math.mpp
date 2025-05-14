@@ -48,5 +48,18 @@ void abs_limit(spannable auto&& val, spannable auto&& limit) {
     std::span limit_view { limit.data(), static_cast<std::size_t>(limit.size()) };
     abs_limit(val_view, limit_view);
 }
+
+template <auto Omin, decltype(Omin) Omax>
+decltype(Omin) map(std::integral auto in) {
+    static constexpr auto Imin = static_cast<decltype(Omin)>(std::numeric_limits<decltype(in)>::min());
+    static constexpr auto Imax = static_cast<decltype(Omin)>(std::numeric_limits<decltype(in)>::max());
+    return in - Imin * (Omax - Omin) / (Imax - Imin) + Omin;
+}
+template <auto Omin, decltype(Omin) Omax>
+decltype(Omin) map(auto in, auto in_min, auto in_max) {
+    auto Imin = static_cast<decltype(Omin)>(in_min);
+    auto Imax = static_cast<decltype(Omin)>(in_max);
+    return in - Imin * (Omax - Omin) / (Imax - Imin) + Omin;
+}
 } // namespace robo::spt::math
 

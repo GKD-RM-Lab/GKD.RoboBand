@@ -103,7 +103,7 @@ private:
     void run() {
         while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
         std::vector<unsigned> ctrl_tasks_cnt;
-        ctrl_tasks_cnt.assign_range(stdv::repeat(0, ctrl_tasks_.size()));
+        ctrl_tasks_cnt.resize(ctrl_tasks_.size(), 0);
         while (not finishing_ and spt::webots.step()) {
             for (auto& task : update_tasks_) task();
             for (auto [cnt, task] : stdv::zip(ctrl_tasks_cnt, ctrl_tasks_)) {

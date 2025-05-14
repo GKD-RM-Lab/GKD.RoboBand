@@ -3,4 +3,5 @@ export module robo:dev;
 export import :dev.base;
 export import :dev.motor;
 export import :dev.imu;
+export import :dev.input;
 

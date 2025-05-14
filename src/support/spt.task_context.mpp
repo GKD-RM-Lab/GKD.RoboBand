@@ -199,7 +199,7 @@ private:
         while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
         std::chrono::steady_clock::time_point time {};
         std::vector<std::chrono::steady_clock::time_point> task_run_time;
-        task_run_time.assign_range(stdv::repeat(std::chrono::steady_clock::now(), tasks_.size()));
+        task_run_time.resize(tasks_.size(), std::chrono::steady_clock::now());
         while (not finishing_) {
             time = std::chrono::steady_clock::now();
             for (auto [run_time, task] : stdv::zip(task_run_time, tasks_)) {

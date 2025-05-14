@@ -16,6 +16,7 @@ public:
     struct Info {
         using dev_type = Dm;
         io_type io;
+        std::chrono::nanoseconds offline_timeout;
         // TODO install_angle
     };
 
@@ -25,7 +26,7 @@ private:
     const io_type io_;
     
 public:
-    explicit Dm(const Info& info) : dev::Imu { 10ms }, io_ { info.io } {
+    explicit Dm(const Info& info) : dev::Imu { info.offline_timeout }, io_ { info.io } {
         using IoParser = io::with_parser<io::prefix<4>,
                                          io::tail<0x0a>,
                                          io::length<19>,
