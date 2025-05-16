@@ -117,8 +117,8 @@ private:
             }
             finished_ = true;
         } catch (const std::exception& e) {
-            std::println("uncaught exception: {}", e.what());
-            std::terminate();
+            std::println("uncaught exception in webots context: {}", e.what());
+            throw;
         }
     }
 };

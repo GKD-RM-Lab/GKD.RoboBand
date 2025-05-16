@@ -24,20 +24,34 @@ private:
     In::dev_type input { Info::input };
     WL::ctrl_type wheel_leg { Info::wheel_leg };
 
+    bool input_connected { false };
+    bool emergency_stopped { false };
+
 public:
     explicit WheelLeg(const Info& info) : 
         Info { info } {
         input.on_offline([this] {
+            if (input_connected) {
+                wheel_leg.emergencyStop();
+                return;
+            }
             wheel_leg.setSpeed(0.0f);
             wheel_leg.setYawErr(0.0f);
             wheel_leg.adjustHeight(0.0f);
         });
         input.on_update([this] {
+            input_connected = true;
             wheel_leg.setSpeed(input.vx() * this->forward_ratio);
             wheel_leg.setYawErr(input.wz() * this->turning_ratio);
             if constexpr (std::same_as<In, input::Gamepad::Info>) {
-                // TODO Software button emergency stop protection
-                wheel_leg.adjustHeight(0.0f);
+                if (input.button().bumper.left or input.button().bumper.right) {
+                    emergency_stopped = true;
+                }
+                wheel_leg.adjustHeight(0.0f); // TODO
+            }
+            if (emergency_stopped) {
+                wheel_leg.emergencyStop();
+                return;
             }
         });
     }

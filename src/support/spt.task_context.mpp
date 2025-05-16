@@ -134,8 +134,8 @@ private:
             }
             finished_ = true;
         } catch (const std::exception& e) {
-            std::println("uncaught exception: {}", e.what());
-            std::terminate();
+            std::println("uncaught exception in {}: {}", info_.desc(), e.what());
+            throw;
         }
     }
 };
@@ -218,8 +218,8 @@ private:
             }
             finished_ = true;
         } catch (const std::exception& e) {
-            std::println("uncaught exception: {}", e.what());
-            std::terminate();
+            std::println("uncaught exception in {}: {}", info_.desc(), e.what());
+            throw;
         }
     }
 };

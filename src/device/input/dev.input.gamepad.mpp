@@ -123,7 +123,7 @@ void Gamepad::open() {
 
     if (not fd.is_valid()) {
         state_ = io::state::offline;
-        throw std::system_error{ errno, std::system_category(), 
+        throw std::system_error{ errno, std::system_category(),
             "failed to open " + info_.desc()
         };
     }
@@ -225,6 +225,8 @@ void Gamepad::task() {
                 [[fallthrough]];
             case EBADF:
                 fd_.close();
+                [[fallthrough]];
+            case EACCES:
                 [[fallthrough]];
             case ENODEV: 
                 [[fallthrough]];

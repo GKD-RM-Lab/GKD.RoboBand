@@ -457,6 +457,8 @@ void SerialImpl::task() {
             case EBADF:
                 fd_.close();
                 [[fallthrough]];
+            case EACCES:
+                [[fallthrough]];
             case ENODEV: 
                 [[fallthrough]];
             case ENOENT:

@@ -84,6 +84,7 @@ public:
 
 private:
     bool started_ { false };
+    bool emergency_stopped { false };
 
     ctrl::ramp speed_set { 0.0f, this->limit.speed_set.max, this->limit.speed_set.delta_max };
     ctrl::ramp yaw_err_set { 0.0f, this->limit.yaw_err_set.max, this->limit.yaw_err_set.delta_max };
@@ -168,49 +169,55 @@ private:
     }
 
     void ctrl_loop() {
-        if (started_) {
-            state_update();
+        if (not started_) return;
+            
+        state_update();
 
-            Eigen::Vector<float, 10> state_set {};
-            state_set.setZero();
-            state_set(1) = speed_set;
-            state_set(2) = state_ref(2) + yaw_err_set;
-            Eigen::Vector<float, 10> state_err = state_set - state_ref;
+        Eigen::Vector<float, 10> state_set {};
+        state_set.setZero();
+        state_set(1) = speed_set;
+        state_set(2) = state_ref(2) + yaw_err_set;
+        Eigen::Vector<float, 10> state_err = state_set - state_ref;
 
-            auto ctrl_vec = K * state_err;
-            // TODO limit joint torque (ctrl_vec(2, 3))
+        Eigen::Vector<float, 4> ctrl_vec = K * state_err;
+        // TODO limit joint torque (ctrl_vec(2, 3))
 
-            float f_inertial {}; // TODO
-            float f_l = pid_height(height_set, height_ref);
-            float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
+        float f_inertial {}; // TODO
+        float f_l = pid_height(height_set, height_ref);
+        float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
 
-            Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
-            auto f_n = trans * f_ctrl;
+        Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
+        Eigen::Vector<float, 2> f_n = trans * f_ctrl;
 
-#ifdef USE_WEBOTS
-            if constexpr (WheelLegInfo::use_webots) {
-                wheel_left.setTorque(ctrl_vec(0));
-                wheel_right.setTorque(ctrl_vec(1));
-                leg_left.setForce(f_n(0), ctrl_vec(2));
-                leg_right.setForce(f_n(1), ctrl_vec(3));
-            } else {
-#endif
-                auto [f1_l, f2_l] = leg_left.calcForce(f_n(0), ctrl_vec(2));
-                auto [f1_r, f2_r] = leg_right.calcForce(f_n(1), ctrl_vec(3));
-                wheel_left.setTorque(ctrl_vec(0));
-                leg_left.motor1.setTorque(f1_l);
-                leg_right.motor1.setTorque(f1_r);
-                std::this_thread::sleep_for(this->motor_ctrl_interval);
-                wheel_right.setTorque(ctrl_vec(1));
-                leg_left.motor2.setTorque(f2_l);
-                leg_right.motor2.setTorque(f2_r);
-#ifdef USE_WEBOTS
-            }
-#endif
+        if (emergency_stopped) {
+            f_n.setZero();
+            ctrl_vec.setZero();
         }
+
+#ifdef USE_WEBOTS
+        if constexpr (WheelLegInfo::use_webots) {
+            wheel_left.setTorque(ctrl_vec(0));
+            wheel_right.setTorque(ctrl_vec(1));
+            leg_left.setForce(f_n(0), ctrl_vec(2));
+            leg_right.setForce(f_n(1), ctrl_vec(3));
+        } else {
+#endif
+            auto [f1_l, f2_l] = leg_left.calcForce(f_n(0), ctrl_vec(2));
+            auto [f1_r, f2_r] = leg_right.calcForce(f_n(1), ctrl_vec(3));
+            wheel_left.setTorque(ctrl_vec(0));
+            leg_left.motor1.setTorque(f1_l);
+            leg_right.motor1.setTorque(f1_r);
+            std::this_thread::sleep_for(this->motor_ctrl_interval);
+            wheel_right.setTorque(ctrl_vec(1));
+            leg_left.motor2.setTorque(f2_l);
+            leg_right.motor2.setTorque(f2_r);
+#ifdef USE_WEBOTS
+        }
+#endif
     }
     
 public:
+    void emergencyStop() { emergency_stopped = true; }
     void setSpeed(float val) {
         speed_set(val);
         if (std::abs(speed_set) < this->limit.speed_set.dead_zone) {
