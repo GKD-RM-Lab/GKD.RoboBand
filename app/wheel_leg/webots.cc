@@ -56,6 +56,8 @@ constexpr robo::ctrl::FiveBarInfo leg_l {
     .l_a = 0.06f,
     .l_b = 0.2f,
     .l_c = 0.3f,
+    .wheel_fixed_side = 2,
+    .forward_installation = true,
 };
 constexpr robo::ctrl::FiveBarInfo leg_r {
     .motor1 = joint_r1,
@@ -63,6 +65,8 @@ constexpr robo::ctrl::FiveBarInfo leg_r {
     .l_a = 0.06f,
     .l_b = 0.2f,
     .l_c = 0.3f,
+    .wheel_fixed_side = 2,
+    .forward_installation = true,
 };
 
 constexpr robo::chassis::WheelLegInfo wheel_leg {
@@ -84,10 +88,13 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             .min = 0.10f, // TODO
             .max = 0.50f, // TODO
         },
+        .speed = {
+            .stop_dead_zone = 0.5f,
+        },
         .speed_set = {
             .max = 2.5f, // TODO
-            .delta_max = 1.25f, // TODO
-            .dead_zone = 0.05f, // TODO
+            .delta_max = 2.5f, // TODO
+            .dead_zone = 0.3f, // TODO
         },
         .yaw_err_set = {
             .max = 0.0f, // TODO

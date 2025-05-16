@@ -5,11 +5,13 @@ export import :ctrl.leg.five_bar;
 export namespace robo::ctrl {
 template <typename T>
 concept leg = 
+    std::same_as<decltype(T::forward_installation), bool> and
     requires (T::ctrl_type t) {
         { t.update() } -> std::same_as<void>;
         { t.setForce(std::declval<float>(), std::declval<float>()) } -> std::same_as<void>;
         { t.length() } -> std::same_as<std::pair<float, float>>;
         { t.angle() } -> std::same_as<std::pair<float, float>>;
+        { t.wheel_angle_offset() } -> std::same_as<std::pair<float, float>>;
     };
 } // namespace robo::ctrl
 

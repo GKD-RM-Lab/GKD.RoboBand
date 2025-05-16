@@ -52,6 +52,9 @@ struct WheelLegInfo {
             float max;
         } height_set;
         struct {
+            float stop_dead_zone;
+        } speed;
+        struct {
             float max;
             float delta_max;
             float dead_zone;
@@ -80,7 +83,7 @@ class WheelLeg final :
     public spt::not_copyable_base,
     private WheelLegInfo<Imu, Leg, M> {
 public: 
-    using WheelLegInfo = WheelLegInfo<Imu, Leg, M>;
+    using Info = WheelLegInfo<Imu, Leg, M>;
 
 private:
     bool started_ { false };
@@ -103,17 +106,17 @@ private:
     ctrl::pid pid_psi { this->param.pid_psi };
 
 public:
-    Imu::dev_type  imu         { WheelLegInfo::imu };
-    Leg::ctrl_type leg_left    { WheelLegInfo::leg_left };
-    Leg::ctrl_type leg_right   { WheelLegInfo::leg_right };
-    M::dev_type    wheel_left  { WheelLegInfo::wheel_left };
-    M::dev_type    wheel_right { WheelLegInfo::wheel_right };
+    Imu::dev_type  imu         { Info::imu };
+    Leg::ctrl_type leg_left    { Info::leg_left };
+    Leg::ctrl_type leg_right   { Info::leg_right };
+    M::dev_type    wheel_left  { Info::wheel_left };
+    M::dev_type    wheel_right { Info::wheel_right };
 
 public:
-    explicit WheelLeg(const WheelLegInfo& info) : 
-        WheelLegInfo { info } {
+    explicit WheelLeg(const Info& info) : 
+        Info { info } {
 #ifdef USE_WEBOTS
-        if (not this->context.test(WheelLegInfo::use_webots)) {
+        if (not this->context.test(Info::use_webots)) {
             throw std::logic_error{ "wrong context type." };
         }
 #endif
@@ -122,9 +125,9 @@ public:
 
     void run() { started_ = true; };
 #ifdef USE_WEBOTS
-    void init() requires WheelLegInfo::use_webots {
+    void init() requires Info::use_webots {
         while (imu.offline());
-        s_offset = (wheel_left.angle() + wheel_right.angle()) * this->constant.wheel_radius / 2.0f;
+        s_offset = (wheel_left_ground_angle().first + wheel_right_ground_angle().first) * this->constant.wheel_radius / 2.0f;
         phi_offset = imu.angle(imu::axis::yaw);
         leg_left.motor1.setAngle(3.447f);
         leg_left.motor2.setAngle(3.447f);
@@ -134,17 +137,31 @@ public:
 #endif
 
 private:
+    auto wheel_left_ground_angle() -> std::pair<float, float> {
+        float dir = Info::leg_left.forward_installation ? 1.0f : -1.0f;
+        return {
+            wheel_left.angle() - leg_left.wheel_angle_offset().first + dir * imu.angle(imu::axis::pitch),
+            wheel_left.speed() - leg_left.wheel_angle_offset().second + dir * imu.gyro(imu::axis::pitch),
+        };
+    }
+    auto wheel_right_ground_angle() -> std::pair<float, float> {
+        float dir = Info::leg_right.forward_installation ? 1.0f : -1.0f;
+        return {
+            wheel_right.angle() - leg_right.wheel_angle_offset().first + dir * imu.angle(imu::axis::pitch),
+            wheel_right.speed() - leg_right.wheel_angle_offset().second + dir * imu.gyro(imu::axis::pitch),
+        };
+    }
+
     void state_update() {
         leg_left.update();
         leg_right.update();
     
-        // TODO s varphi_C
-        float s = (wheel_left.angle() + wheel_right.angle()) * this->constant.wheel_radius / 2.0f;
-        if (speed_set != 0.0f) {
+        float s = (wheel_left_ground_angle().first + wheel_right_ground_angle().first) * this->constant.wheel_radius / 2.0f;
+        float dot_s = (wheel_left_ground_angle().second + wheel_right_ground_angle().second) * this->constant.wheel_radius / 2.0f;
+        if (std::abs(speed_set) > this->limit.speed_set.dead_zone or std::abs(dot_s) > this->limit.speed.stop_dead_zone) {
             s_offset = s;
         }
         s = s - s_offset;
-        float dot_s = (wheel_left.speed() + wheel_right.speed()) * this->constant.wheel_radius / 2.0f;
         float phi = imu.angle(imu::axis::yaw);
         if (yaw_err_set != 0.0f) {
             phi_offset = phi;
@@ -158,8 +175,7 @@ private:
         float dot_theta_l_1 = leg_left.angle().second + dot_theta_b;
         float dot_theta_l_2 = leg_right.angle().second + dot_theta_b;
 
-        math::abs_limit(s, this->limit.s_ref_max);
-        // math::abs_limit(dot_s); // TODO
+        // TODO remove ?
         math::abs_limit(theta_l_1, this->limit.theta_l_ref_max);
         math::abs_limit(theta_l_2, this->limit.theta_l_ref_max);
         math::abs_limit(theta_b, this->limit.theta_b_ref_max);
@@ -171,6 +187,7 @@ private:
     void ctrl_loop() {
         if (not started_) return;
             
+        // TODO offline test
         state_update();
 
         Eigen::Vector<float, 10> state_set {};
@@ -195,7 +212,7 @@ private:
         }
 
 #ifdef USE_WEBOTS
-        if constexpr (WheelLegInfo::use_webots) {
+        if constexpr (Info::use_webots) {
             wheel_left.setTorque(ctrl_vec(0));
             wheel_right.setTorque(ctrl_vec(1));
             leg_left.setForce(f_n(0), ctrl_vec(2));
