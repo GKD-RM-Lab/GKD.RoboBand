@@ -53,13 +53,13 @@ template <auto Omin, decltype(Omin) Omax>
 decltype(Omin) map(std::integral auto in) {
     static constexpr auto Imin = static_cast<decltype(Omin)>(std::numeric_limits<decltype(in)>::min());
     static constexpr auto Imax = static_cast<decltype(Omin)>(std::numeric_limits<decltype(in)>::max());
-    return in - Imin * (Omax - Omin) / (Imax - Imin) + Omin;
+    return (in - Imin) * (Omax - Omin) / (Imax - Imin) + Omin;
 }
 template <auto Omin, decltype(Omin) Omax>
 decltype(Omin) map(auto in, auto in_min, auto in_max) {
     auto Imin = static_cast<decltype(Omin)>(in_min);
     auto Imax = static_cast<decltype(Omin)>(in_max);
-    return in - Imin * (Omax - Omin) / (Imax - Imin) + Omin;
+    return (in - Imin) * (Omax - Omin) / (Imax - Imin) + Omin;
 }
 } // namespace robo::spt::math
 

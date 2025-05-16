@@ -6,19 +6,18 @@ import :dev.base;
 export namespace robo {
 namespace dev {
 struct Input : public Dev {
-protected:
-
-public:
     using Dev::Dev;
-
 };
 
 template <typename T>
 concept input =
     std::derived_from<typename T::dev_type, Input> and
-    requires(T t) {
+    requires(T::dev_type t) {
         { t.on_offline([] {}) } -> std::same_as<void>;
         { t.on_update([] {}) } -> std::same_as<void>;
+        { t.vx() } -> std::same_as<float>;
+        { t.vy() } -> std::same_as<float>;
+        { t.wz() } -> std::same_as<float>;
     };
 } // namespace dev
 } // namespace robo

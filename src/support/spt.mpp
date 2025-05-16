@@ -1,6 +1,7 @@
 export module robo:spt;
 
 export import :spt.misc;
+export import :spt.time;
 export import :spt.math;
 export import :spt.crc;
 export import :spt.task_context;

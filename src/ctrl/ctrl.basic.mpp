@@ -4,7 +4,7 @@ import std;
 import :spt;
 
 export namespace robo::ctrl {
-class pid {
+struct pid {
 public:
     struct param {
         float kp;
@@ -15,24 +15,24 @@ public:
     };
 
 private:
-    const param param_;
+    const param p;
     std::array<float, 2> error {};
     float i_out {};
 
 public:
-    pid(const param& param_) : param_ { param_ } {}
+    explicit pid(const param& p) : p { p } {}
 
     float calc(const float err) {
         error[1] = error[0];
         error[0] = err;
 
-        float p_out = param_.kp * error[0];
-        float d_out = param_.kd * (error[0] - error[1]);
-        i_out += param_.ki * error[0];
-        math::abs_limit(i_out, param_.max_iout);
+        float p_out = p.kp * error[0];
+        float d_out = p.kd * (error[0] - error[1]);
+        i_out += p.ki * error[0];
+        math::abs_limit(i_out, p.max_iout);
 
         float out = p_out + i_out + d_out;
-        math::abs_limit(out, param_.max_out);
+        math::abs_limit(out, p.max_out);
         return out;
     }
     float calc(const float set, const float feedback) {
@@ -41,6 +41,46 @@ public:
     float operator()(auto... args) {
         return calc(args...);
     }
+};
+
+struct ramp {
+public:
+    struct param {
+        struct {
+            float min;
+            float max;
+        } out;
+        float delta_max;
+    };
+
+private:
+    param p;
+    float val;
+    std::chrono::nanoseconds init_time { spt::time::now() };
+    std::chrono::nanoseconds update_time { init_time };
+
+public:
+    explicit ramp(const float init_val, const param& p) :
+        p { p },
+        val { init_val } {
+    }
+    explicit ramp(const float init_val, const float out_max, const float delta_max) :
+        ramp(init_val, { { -out_max, out_max }, delta_max }) {}
+
+    void setDeltaMax(const float delta_max) {
+        p.delta_max = delta_max;
+    }
+    float& get() { return val; }
+    float set(const float in, const decltype(update_time) t = spt::time::now()) {
+        float delta = in - val;
+        if (update_time == init_time) delta = 0.0f;
+        math::abs_limit(delta, p.delta_max * (static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(t - update_time).count()) / 1e-9f));
+        val = std::clamp(val + delta, p.out.min, p.out.max);
+        update_time = t;
+        return val;
+    }
+    float operator()(const float in, const decltype(update_time) t = spt::time::now()) { return set(in, t); }
+    operator float() { return val; }
 };
 } // namespace robo::ctrl
 

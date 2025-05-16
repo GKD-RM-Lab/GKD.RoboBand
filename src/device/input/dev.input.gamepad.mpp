@@ -18,6 +18,8 @@ export namespace robo::input {
 class Gamepad final : public dev::Input {
 public:
     struct Info {
+        using dev_type = Gamepad;
+
         std::string_view name;
         std::chrono::nanoseconds offline_timeout;
         spt::task_context::continuous::info context;
@@ -103,6 +105,9 @@ public:
     auto& stick() const { return stick_; }
     auto& trigger() const { return trigger_; }
     auto& button() const { return button_; }
+    float vx() const { return -stick_[1]; }
+    float vy() const { return stick_[0]; }
+    float wz() const { return stick_[3]; }
 
 private:
     void open();
@@ -290,5 +295,6 @@ void Gamepad::map_xbox(const js_event& event) {
         }
     }
 }
+static_assert(dev::input<Gamepad::Info>);
 } // namespace robo::input
 

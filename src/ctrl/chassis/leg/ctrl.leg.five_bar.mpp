@@ -99,15 +99,19 @@ public:
         dot_theta_l = task(1);
     }
 
-    void setForce(const float f_n, const float tau_j) {
+    auto calcForce(const float f_n, const float tau_j) -> std::pair<float, float> {
         Eigen::Vector<float, 2> force_virtual;
         Eigen::Vector<float, 2> force_actual;
 
         force_virtual << f_n, tau_j;
         force_actual = jacobian_trans.transpose() * force_virtual;
+        return { force_actual(0), force_actual(1) };
+    }
 
-        motor1.setTorque(force_actual(0));
-        motor2.setTorque(force_actual(1));
+    void setForce(const float f_n, const float tau_j) {
+        auto [f1, f2] = calcForce(f_n, tau_j);
+        motor1.setTorque(f1);
+        motor2.setTorque(f2);
     }
 };
 template <dev::motor M1, dev::motor M2>

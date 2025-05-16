@@ -126,12 +126,17 @@ public:
 
 private:
     void run() noexcept {
-        while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
-        while (not finishing_) {
-            for (auto& task : tasks_) task();
-            std::this_thread::sleep_for(idle_duration_);
+        try {
+            while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
+            while (not finishing_) {
+                for (auto& task : tasks_) task();
+                std::this_thread::sleep_for(idle_duration_);
+            }
+            finished_ = true;
+        } catch (const std::exception& e) {
+            std::println("uncaught exception: {}", e.what());
+            std::terminate();
         }
-        finished_ = true;
     }
 };
 } // namespace detail
@@ -196,21 +201,26 @@ public:
 
 private:
     void run() noexcept {
-        while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
-        std::chrono::steady_clock::time_point time {};
-        std::vector<std::chrono::steady_clock::time_point> task_run_time;
-        task_run_time.resize(tasks_.size(), std::chrono::steady_clock::now());
-        while (not finishing_) {
-            time = std::chrono::steady_clock::now();
-            for (auto [run_time, task] : stdv::zip(task_run_time, tasks_)) {
-                if (time > run_time) {
-                    task.second();
-                    run_time += task.first;
+        try {
+            while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
+            std::chrono::steady_clock::time_point time {};
+            std::vector<std::chrono::steady_clock::time_point> task_run_time;
+            task_run_time.resize(tasks_.size(), std::chrono::steady_clock::now());
+            while (not finishing_) {
+                time = std::chrono::steady_clock::now();
+                for (auto [run_time, task] : stdv::zip(task_run_time, tasks_)) {
+                    if (time > run_time) {
+                        task.second();
+                        run_time += task.first;
+                    }
                 }
+                std::this_thread::sleep_until(stdr::min(task_run_time));
             }
-            std::this_thread::sleep_until(stdr::min(task_run_time));
+            finished_ = true;
+        } catch (const std::exception& e) {
+            std::println("uncaught exception: {}", e.what());
+            std::terminate();
         }
-        finished_ = true;
     }
 };
 } // namespace detail
@@ -296,6 +306,23 @@ void wait_until_all_finished() {
     while (not finished()) {
         std::this_thread::sleep_for(1ms);
     }
+}
+void wait_for(auto&& info) {
+#ifdef USE_WEBOTS
+    if (info.is_for_webots()) {
+        while (not task_context::webots::finished()) {
+            std::this_thread::sleep_for(1ms);
+        }
+    } else {
+#endif
+        while (not spt::multiton::get(info).finished()) {
+            std::this_thread::sleep_for(1ms);
+        }
+#ifdef USE_WEBOTS
+    }
+#endif
+    finish();
+    wait_until_all_finished();
 }
 } // namespace robo::spt::task_context
 

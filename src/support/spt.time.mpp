@@ -1,0 +1,24 @@
+export module robo:spt.time;
+
+import std;
+#ifdef USE_WEBOTS
+import :spt.webots;
+#endif
+
+export namespace robo::spt {
+struct time {
+    static auto now() {
+        static const auto init_time = std::chrono::steady_clock::now();
+#ifdef USE_WEBOTS
+        if (spt::webots.initialized()) {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(spt::webots.time());
+        } else {
+#endif
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - init_time);
+#ifdef USE_WEBOTS
+        }
+#endif
+    }
+};
+} // namespace robo::spt
+

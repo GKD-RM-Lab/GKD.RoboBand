@@ -27,11 +27,13 @@ struct WheelLegInfo {
     }();
 
     spt::task_context::periodic::info context { spt::task_context::periodic::info::webots() };
+    std::chrono::nanoseconds ctrl_period;
+    std::chrono::nanoseconds motor_ctrl_interval { std::chrono::nanoseconds::max() };
 #else
     spt::task_context::periodic::info context;
-#endif
-
     std::chrono::nanoseconds ctrl_period;
+    std::chrono::nanoseconds motor_ctrl_interval;
+#endif
 
     Imu imu;
     Leg leg_left;
@@ -39,17 +41,37 @@ struct WheelLegInfo {
     M wheel_left;
     M wheel_right;
 
-    float f_gravity;
-    float wheel_radius;
+    struct {
+        float f_gravity;
+        float wheel_radius;
+    } constant;
 
-    float s_ref_max;
-    float phi_ref_max;
-    float theta_l_ref_max;
-    float theta_b_ref_max;
+    struct {
+        struct {
+            float min;
+            float max;
+        } height_set;
+        struct {
+            float max;
+            float delta_max;
+            float dead_zone;
+        } speed_set;
+        struct {
+            float max;
+            float delta_max;
+            float dead_zone;
+        } yaw_err_set;
+        float s_ref_max;
+        float phi_err_max;
+        float theta_l_ref_max;
+        float theta_b_ref_max;
+    } limit;
     
-    std::array<float, 40> K;
-    ctrl::pid::param pid_l;
-    ctrl::pid::param pid_psi;
+    struct {
+        std::array<float, 40> K;
+        ctrl::pid::param pid_height;
+        ctrl::pid::param pid_psi;
+    } param;
 };
 
 template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
@@ -63,17 +85,21 @@ public:
 private:
     bool started_ { false };
 
+    ctrl::ramp speed_set { 0.0f, this->limit.speed_set.max, this->limit.speed_set.delta_max };
+    ctrl::ramp yaw_err_set { 0.0f, this->limit.yaw_err_set.max, this->limit.yaw_err_set.delta_max };
+    float height_set { this->limit.height_set.min };
+
+    float s_offset {};
+    float phi_offset {};
+    Eigen::Vector<float, 10> state_ref {};
+    float height_ref {};
+
     const Eigen::Matrix<float, 2, 4, Eigen::RowMajor> trans { std::array{
         1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f
     }.data() };
-    const Eigen::Matrix<float, 4, 10, Eigen::RowMajor> K { WheelLegInfo::K.data() };
-
-    ctrl::pid pid_l { WheelLegInfo::pid_l };
-    ctrl::pid pid_psi { WheelLegInfo::pid_psi };
-
-    Eigen::Vector<float, 10> state_ref;
-    Eigen::Vector<float, 10> state_set;
-    Eigen::Vector<float, 4> ctrl_vec;
+    const Eigen::Matrix<float, 4, 10, Eigen::RowMajor> K { this->param.K.data() };
+    ctrl::pid pid_height { this->param.pid_height };
+    ctrl::pid pid_psi { this->param.pid_psi };
 
 public:
     Imu::dev_type  imu         { WheelLegInfo::imu };
@@ -82,6 +108,7 @@ public:
     M::dev_type    wheel_left  { WheelLegInfo::wheel_left };
     M::dev_type    wheel_right { WheelLegInfo::wheel_right };
 
+public:
     explicit WheelLeg(const WheelLegInfo& info) : 
         WheelLegInfo { info } {
 #ifdef USE_WEBOTS
@@ -93,13 +120,15 @@ public:
     }
 
     void run() { started_ = true; };
-    void init() {}
 #ifdef USE_WEBOTS
     void init() requires WheelLegInfo::use_webots {
-        leg_left.motor1.setAngle(std::numbers::pi_v<float> + 0.305426f);
-        leg_left.motor2.setAngle(std::numbers::pi_v<float> + 0.305426f);
-        leg_right.motor1.setAngle(std::numbers::pi_v<float> + 0.305426f);
-        leg_right.motor2.setAngle(std::numbers::pi_v<float> + 0.305426f);
+        while (imu.offline());
+        s_offset = (wheel_left.angle() + wheel_right.angle()) * this->constant.wheel_radius / 2.0f;
+        phi_offset = imu.angle(imu::axis::yaw);
+        leg_left.motor1.setAngle(3.447f);
+        leg_left.motor2.setAngle(3.447f);
+        leg_right.motor1.setAngle(3.447f);
+        leg_right.motor2.setAngle(3.447f);
     }
 #endif
 
@@ -108,11 +137,18 @@ private:
         leg_left.update();
         leg_right.update();
     
-        // TODO reset s
         // TODO s varphi_C
-        float s = (wheel_left.angle() + wheel_right.angle()) * this->wheel_radius / 2.0f;
-        float dot_s = (wheel_left.speed() + wheel_right.speed()) * this->wheel_radius / 2.0f;
+        float s = (wheel_left.angle() + wheel_right.angle()) * this->constant.wheel_radius / 2.0f;
+        if (speed_set != 0.0f) {
+            s_offset = s;
+        }
+        s = s - s_offset;
+        float dot_s = (wheel_left.speed() + wheel_right.speed()) * this->constant.wheel_radius / 2.0f;
         float phi = imu.angle(imu::axis::yaw);
+        if (yaw_err_set != 0.0f) {
+            phi_offset = phi;
+        }
+        phi = std::remainder(phi - phi_offset, 2.0f * std::numbers::pi_v<float>);
         float dot_phi = imu.gyro(imu::axis::yaw);
         float theta_b = imu.angle(imu::axis::pitch);
         float dot_theta_b = imu.gyro(imu::axis::pitch);
@@ -121,45 +157,71 @@ private:
         float dot_theta_l_1 = leg_left.angle().second + dot_theta_b;
         float dot_theta_l_2 = leg_right.angle().second + dot_theta_b;
 
-        math::abs_limit(s, this->s_ref_max);
-        math::abs_limit(dot_s, 0.2f);
-        math::abs_limit(phi, this->phi_ref_max); // TODO
-        math::abs_limit(theta_l_1, this->theta_l_ref_max);
-        math::abs_limit(theta_l_2, this->theta_l_ref_max);
-        math::abs_limit(theta_b, this->theta_b_ref_max);
+        math::abs_limit(s, this->limit.s_ref_max);
+        // math::abs_limit(dot_s); // TODO
+        math::abs_limit(theta_l_1, this->limit.theta_l_ref_max);
+        math::abs_limit(theta_l_2, this->limit.theta_l_ref_max);
+        math::abs_limit(theta_b, this->limit.theta_b_ref_max);
 
         state_ref << s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b;
+        height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
     }
 
     void ctrl_loop() {
         if (started_) {
             state_update();
 
+            Eigen::Vector<float, 10> state_set {};
             state_set.setZero();
-            // TODO rad_format phi
-            ctrl_vec = K * (state_set - state_ref);
+            state_set(1) = speed_set;
+            state_set(2) = state_ref(2) + yaw_err_set;
+            Eigen::Vector<float, 10> state_err = state_set - state_ref;
+
+            auto ctrl_vec = K * state_err;
             // TODO limit joint torque (ctrl_vec(2, 3))
 
-            float f_psi {};
-            float f_l {};
-            float f_inertial {};
+            float f_inertial {}; // TODO
+            float f_l = pid_height(height_set, height_ref);
+            float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
 
-            // TODO not l but h
-            float l_set = 0.20f;
-            float l_ref = 0.5f * (leg_left.length().first + leg_right.length().first);
-            f_l = pid_l(l_set, l_ref);
-
-            float psi_ref = imu.angle(imu::axis::roll);
-            f_psi = pid_psi(0.0f, psi_ref);
-
-            Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->f_gravity, f_inertial };
+            Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
             auto f_n = trans * f_ctrl;
 
-            wheel_left.setTorque(ctrl_vec(0));
-            wheel_right.setTorque(ctrl_vec(1));
-            leg_left.setForce(f_n(0), ctrl_vec(2));
-            leg_right.setForce(f_n(1), ctrl_vec(3));
+#ifdef USE_WEBOTS
+            if constexpr (WheelLegInfo::use_webots) {
+                wheel_left.setTorque(ctrl_vec(0));
+                wheel_right.setTorque(ctrl_vec(1));
+                leg_left.setForce(f_n(0), ctrl_vec(2));
+                leg_right.setForce(f_n(1), ctrl_vec(3));
+            } else {
+#endif
+                auto [f1_l, f2_l] = leg_left.calcForce(f_n(0), ctrl_vec(2));
+                auto [f1_r, f2_r] = leg_right.calcForce(f_n(1), ctrl_vec(3));
+                wheel_left.setTorque(ctrl_vec(0));
+                leg_left.motor1.setTorque(f1_l);
+                leg_right.motor1.setTorque(f1_r);
+                std::this_thread::sleep_for(this->motor_ctrl_interval);
+                wheel_right.setTorque(ctrl_vec(1));
+                leg_left.motor2.setTorque(f2_l);
+                leg_right.motor2.setTorque(f2_r);
+#ifdef USE_WEBOTS
+            }
+#endif
         }
+    }
+    
+public:
+    void setSpeed(float val) {
+        speed_set(val);
+        if (std::abs(speed_set) < this->limit.speed_set.dead_zone) {
+            speed_set.get() = 0.0f;
+        }
+    }
+    void setYawErr(float val) {
+    }
+    void adjustHeight(float val) {
+        height_set = std::clamp(height_set + val, this->limit.height_set.min, this->limit.height_set.max);
+        height_set = 0.2f; // TODO 
     }
 };
 } // namespace robo::ctrl::chassis

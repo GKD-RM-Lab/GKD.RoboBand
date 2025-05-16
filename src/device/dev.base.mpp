@@ -2,20 +2,21 @@ export module robo:dev.base;
 
 import std;
 import :spt.misc;
+import :spt.time;
 
 export namespace robo::dev {
 struct Dev :
     public spt::immovable_base, 
     public spt::not_copyable_base {
 protected:
-    std::chrono::steady_clock::time_point tick_time_ { std::chrono::steady_clock::now() };
+    std::chrono::nanoseconds tick_time_ { spt::time::now() };
     const std::chrono::nanoseconds offline_timeout_;
 
 public:
     Dev(const std::chrono::nanoseconds offline_timeout) : offline_timeout_ { offline_timeout } {}
 
-    bool offline() { return std::chrono::steady_clock::now() - tick_time_ > offline_timeout_; }
-    void tick() { tick_time_ = std::chrono::steady_clock::now(); }
+    bool offline() { return spt::time::now() - tick_time_ > offline_timeout_; }
+    void tick() { tick_time_ = spt::time::now(); }
 };
 } // namespace robo::dev
 

@@ -101,20 +101,25 @@ public:
 
 private:
     void run() {
-        while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
-        std::vector<unsigned> ctrl_tasks_cnt;
-        ctrl_tasks_cnt.resize(ctrl_tasks_.size(), 0);
-        while (not finishing_ and spt::webots.step()) {
-            for (auto& task : update_tasks_) task();
-            for (auto [cnt, task] : stdv::zip(ctrl_tasks_cnt, ctrl_tasks_)) {
-                cnt++;
-                if (cnt >= task.first) {
-                    cnt = 0;
-                    task.second();
+        try {
+            while (not started_ and not finishing_) std::this_thread::sleep_for(10us);
+            std::vector<unsigned> ctrl_tasks_cnt;
+            ctrl_tasks_cnt.resize(ctrl_tasks_.size(), 0);
+            while (not finishing_ and spt::webots.step()) {
+                for (auto& task : update_tasks_) task();
+                for (auto [cnt, task] : stdv::zip(ctrl_tasks_cnt, ctrl_tasks_)) {
+                    cnt++;
+                    if (cnt >= task.first) {
+                        cnt = 0;
+                        task.second();
+                    }
                 }
             }
+            finished_ = true;
+        } catch (const std::exception& e) {
+            std::println("uncaught exception: {}", e.what());
+            std::terminate();
         }
-        finished_ = true;
     }
 };
 } // namespace task_context
