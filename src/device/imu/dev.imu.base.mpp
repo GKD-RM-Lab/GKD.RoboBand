@@ -9,6 +9,9 @@ enum class axis : std::size_t {
     roll  = 0,
     pitch = 1,
     yaw   = 2,
+    x = 0,
+    y = 1,
+    z = 2,
 };
 } // namespace imu
 

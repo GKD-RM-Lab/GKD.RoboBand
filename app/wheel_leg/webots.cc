@@ -92,8 +92,8 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             .stop_dead_zone = 0.5f,
         },
         .speed_set = {
-            .max = 2.5f, // TODO
-            .delta_max = 2.5f, // TODO
+            .max = 2.0f, // TODO
+            .delta_max = 5.0f, // TODO
             .dead_zone = 0.3f, // TODO
         },
         .yaw_err_set = {
@@ -117,7 +117,7 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
         .pid_height = {
             .kp = 400.0f,
             .ki = 0.15f,
-            .kd = 100000.0f,
+            .kd = 20000.0f,
             .max_iout = 5.0f,
             .max_out = 20.0f,
         },
@@ -128,6 +128,12 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             .max_iout = 10.0f,
             .max_out = 20.0f,
         },
+        .speed_observer = {
+            .A = { 1.0f, 0.001f, 0.0f, 1.0f },
+            .H = { 1.0f, 0.0f, 0.0f, 1.0f },
+            .Q_c = { 20.0f * 1e-3f, 0.0f, 0.0f, 0.01f * 1e-3f },
+            .R_c = { 1000.0f, 0.0f, 0.0f, 0.01f },
+        }
     },
 };
 

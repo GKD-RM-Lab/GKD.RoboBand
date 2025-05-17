@@ -1,7 +1,12 @@
+module;
+
+#include <eigen3/Eigen/Eigen>
+
 export module robo:ctrl.basic;
 
 import std;
 import :spt;
+namespace stdr = std::ranges;
 
 export namespace robo::ctrl {
 struct pid {
@@ -81,6 +86,55 @@ public:
     }
     float operator()(const float in, const decltype(update_time) t = spt::time::now()) { return set(in, t); }
     operator float() { return val; }
+};
+
+template <std::size_t N>
+struct kalman {
+public:
+    struct param {
+        std::array<float, N * N> A;
+        std::array<float, N * N> H;
+        std::array<float, N * N> Q_c;
+        std::array<float, N * N> R_c;
+    };
+
+private:
+    const param p;
+
+    const Eigen::Matrix<float, N, N, Eigen::RowMajor> A { p.A.data() };
+    const Eigen::Matrix<float, N, N, Eigen::RowMajor> Q_c { p.Q_c.data() };
+    const Eigen::Matrix<float, N, N, Eigen::RowMajor> R_c { p.R_c.data() };
+    const Eigen::Matrix<float, N, N, Eigen::RowMajor> H { p.H.data() };
+
+    Eigen::Vector<float, N> x_hat;
+    Eigen::Matrix<float, N, N, Eigen::RowMajor> P { decltype(P)::Identity() };
+
+public:
+    explicit kalman(const std::array<float, N> x_hat_init, const param& p) : 
+        p { p },
+        x_hat { x_hat_init.data() } {
+    }
+
+    const Eigen::Vector<float, N>& update(const Eigen::Vector<float, N>& z) {
+        auto x_hat_minus = A * x_hat;
+        auto P_minus = A * P * A.transpose() + Q_c;
+        auto K = (P_minus * H) * (H * P_minus * H.transpose() + R_c).inverse();
+        x_hat = x_hat_minus + K * (z - H * x_hat_minus);
+        P = (Eigen::Matrix<float, N, N>::Identity() - K * H) * P_minus;
+        return x_hat;
+    }
+    std::array<float, N> update(const std::array<float, N>& z) {
+        std::array<float, N> arr;
+        auto ret = update(Eigen::Vector<float, N>{z.data()});
+        stdr::copy(ret, arr.begin());
+        return arr;
+    }
+    std::array<float, N> update(const std::floating_point auto... args) {
+        return update(std::array<float, N>{args...});
+    }
+    decltype(auto) operator()(auto&&... args) {
+        return update(std::forward<decltype(args)>(args)...);
+    }
 };
 } // namespace robo::ctrl
 

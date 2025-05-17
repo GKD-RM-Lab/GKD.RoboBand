@@ -28,6 +28,7 @@ private:
     float torque_max_ { static_cast<float>(spt::webots(wb_motor_get_max_torque, motor_tag_)) };
     float angle_last_ {};
     float angle_offset_ {};
+    bool first_time { true };
 
 public:
     explicit Webots(const Info& info) :
@@ -37,7 +38,12 @@ public:
         spt::task_context::webots::add_update_task([this] {
             float angle_temp = static_cast<float>(spt::webots(wb_position_sensor_get_value, encoder_tag_));
             angle_ = static_cast<float>(info_.dir) * angle_temp - angle_offset_;
-            speed_ = (angle_ - angle_last_) / (spt::webots.basic_time_step<float>() * 0.001f);
+            if (first_time) {
+                speed_ = 0.0f;
+                first_time = false;
+            } else {
+                speed_ = (angle_ - angle_last_) / (spt::webots.basic_time_step<float>() * 0.001f);
+            }
             angle_last_ = angle_;
         });
     }

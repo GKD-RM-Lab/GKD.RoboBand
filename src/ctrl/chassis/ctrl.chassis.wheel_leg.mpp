@@ -74,6 +74,7 @@ struct WheelLegInfo {
         std::array<float, 40> K;
         ctrl::pid::param pid_height;
         ctrl::pid::param pid_psi;
+        ctrl::kalman<2>::param speed_observer;
     } param;
 };
 
@@ -93,10 +94,8 @@ private:
     ctrl::ramp yaw_err_set { 0.0f, this->limit.yaw_err_set.max, this->limit.yaw_err_set.delta_max };
     float height_set { this->limit.height_set.min };
 
-    float s_offset {};
+    float displacement_offset {};
     float phi_offset {};
-    Eigen::Vector<float, 10> state_ref {};
-    float height_ref {};
 
     const Eigen::Matrix<float, 2, 4, Eigen::RowMajor> trans { std::array{
         1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f
@@ -104,6 +103,7 @@ private:
     const Eigen::Matrix<float, 4, 10, Eigen::RowMajor> K { this->param.K.data() };
     ctrl::pid pid_height { this->param.pid_height };
     ctrl::pid pid_psi { this->param.pid_psi };
+    ctrl::kalman<2> speed_observer { { 0.0f, 0.0f }, this->param.speed_observer };
 
 public:
     Imu::dev_type  imu         { Info::imu };
@@ -127,7 +127,7 @@ public:
 #ifdef USE_WEBOTS
     void init() requires Info::use_webots {
         while (imu.offline());
-        s_offset = (wheel_left_ground_angle().first + wheel_right_ground_angle().first) * this->constant.wheel_radius / 2.0f;
+        // TODO displacement_offset
         phi_offset = imu.angle(imu::axis::yaw);
         leg_left.motor1.setAngle(3.447f);
         leg_left.motor2.setAngle(3.447f);
@@ -151,23 +151,21 @@ private:
             wheel_right.speed() - leg_right.wheel_angle_offset().second + dir * imu.gyro(imu::axis::pitch),
         };
     }
+    float wheel_displacement_avg() {
+        return (wheel_left_ground_angle().first + wheel_right_ground_angle().first) * this->constant.wheel_radius / 2.0f;
+    }
+    float wheel_speed_avg() {
+        return (wheel_left_ground_angle().second + wheel_right_ground_angle().second) * this->constant.wheel_radius / 2.0f;
+    }
 
-    void state_update() {
+    void ctrl_loop() {
+        if (not started_) return;
+        // TODO offline test
+   
+        // state update
         leg_left.update();
         leg_right.update();
     
-        float s = (wheel_left_ground_angle().first + wheel_right_ground_angle().first) * this->constant.wheel_radius / 2.0f;
-        float dot_s = (wheel_left_ground_angle().second + wheel_right_ground_angle().second) * this->constant.wheel_radius / 2.0f;
-        if (std::abs(speed_set) > this->limit.speed_set.dead_zone or std::abs(dot_s) > this->limit.speed.stop_dead_zone) {
-            s_offset = s;
-        }
-        s = s - s_offset;
-        float phi = imu.angle(imu::axis::yaw);
-        if (yaw_err_set != 0.0f) {
-            phi_offset = phi;
-        }
-        phi = std::remainder(phi - phi_offset, 2.0f * std::numbers::pi_v<float>);
-        float dot_phi = imu.gyro(imu::axis::yaw);
         float theta_b = imu.angle(imu::axis::pitch);
         float dot_theta_b = imu.gyro(imu::axis::pitch);
         float theta_l_1 = leg_left.angle().first + theta_b;
@@ -175,24 +173,43 @@ private:
         float dot_theta_l_1 = leg_left.angle().second + dot_theta_b;
         float dot_theta_l_2 = leg_right.angle().second + dot_theta_b;
 
+        float dot_s = wheel_speed_avg();
+        float dot_s_leg = (leg_left.length().second  * std::sin(theta_l_1) + leg_left.length().first  * dot_theta_l_1 * std::cos(theta_l_1) +
+                           leg_right.length().second * std::sin(theta_l_2) + leg_right.length().first * dot_theta_l_2 * std::cos(theta_l_2)) / 2.0f;
+        auto [speed, _] = speed_observer(dot_s + dot_s_leg, imu.acc(imu::axis::x));
+        float speed_origin = dot_s + dot_s_leg;
+        dot_s = speed - dot_s_leg;
+
+        float s = wheel_displacement_avg();
+        float s_leg = (leg_left.length().first * std::sin(theta_l_1) + leg_right.length().first * std::sin(theta_l_2)) / 2.0f;
+        float displacement = s + s_leg;
+        if (std::abs(speed_set) > this->limit.speed_set.dead_zone or std::abs(speed) > this->limit.speed.stop_dead_zone) {
+            displacement_offset = displacement;
+        }
+        displacement = displacement - displacement_offset;
+        s = displacement - s_leg;
+
+        float phi = imu.angle(imu::axis::yaw);
+        if (yaw_err_set != 0.0f) {
+            phi_offset = phi;
+        }
+        phi = std::remainder(phi - phi_offset, 2.0f * std::numbers::pi_v<float>);
+        float dot_phi = imu.gyro(imu::axis::yaw);
+
         // TODO remove ?
         math::abs_limit(theta_l_1, this->limit.theta_l_ref_max);
         math::abs_limit(theta_l_2, this->limit.theta_l_ref_max);
         math::abs_limit(theta_b, this->limit.theta_b_ref_max);
 
+        // control
+        Eigen::Vector<float, 10> state_ref {};
         state_ref << s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b;
-        height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
-    }
-
-    void ctrl_loop() {
-        if (not started_) return;
-            
-        // TODO offline test
-        state_update();
+        float height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
 
         Eigen::Vector<float, 10> state_set {};
         state_set.setZero();
-        state_set(1) = speed_set;
+        state_set(0) = -s_leg;
+        state_set(1) = speed_set - dot_s_leg;
         state_set(2) = state_ref(2) + yaw_err_set;
         Eigen::Vector<float, 10> state_err = state_set - state_ref;
 
@@ -200,7 +217,7 @@ private:
         // TODO limit joint torque (ctrl_vec(2, 3))
 
         float f_inertial {}; // TODO
-        float f_l = pid_height(height_set, height_ref);
+        float f_l = pid_height(height_set, height_ref); // TODO
         float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
 
         Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
