@@ -1,51 +1,102 @@
 import std;
 import robo;
 using namespace std::chrono_literals;
+using namespace robo::spt::byte_literals;
 
 ///////////////////////////////////////////
 // context
 ///////////////////////////////////////////
-constexpr auto context = robo::task_context::continuous::info::make();
+constexpr auto c_context = robo::task_context::continuous::info::make();
+constexpr auto p_context = robo::task_context::periodic::info::make();
+
+///////////////////////////////////////////
+// io
+///////////////////////////////////////////
+constexpr robo::io::Serial::Info serial_imu {
+    .name = "/dev/serial/by-id/usb-DM-IMU_DM-IMU_USB_CDC_2025021200-if00",
+    .context = c_context,
+    .rx_idle_duration = 50us,
+    .rx_buffer_size = robo::imu::Dm::rx_size,
+    .baud_rate = 4000000,
+};
+constexpr robo::io::Serial::Info serial_motor_0_1 {
+    .name = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_58ED020672-if00",
+    .context = c_context,
+    .rx_idle_duration = 50us,
+    .rx_buffer_size = robo::motor::Unitree::rx_size,
+    .baud_rate = 4000000,
+};
+constexpr robo::io::Serial::Info serial_motor_2_3 {
+    .name = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_594D003385-if00",
+    .context = c_context,
+    .rx_idle_duration = 50us,
+    .rx_buffer_size = robo::motor::Unitree::rx_size,
+    .baud_rate = 4000000,
+};
+constexpr robo::io::Serial::Info serial_motor_4_5 {
+    .name = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_594D003319-if00",
+    .context = c_context,
+    .rx_idle_duration = 50us,
+    .rx_buffer_size = robo::motor::Unitree::rx_size,
+    .baud_rate = 4000000,
+};
 
 ///////////////////////////////////////////
 // device
 ///////////////////////////////////////////
-constexpr robo::imu::Webots::Info imu {
-    .inertial_unit_name = "inertial unit",
-    .gyro_name = "gyro",
-    .accelerometer_name = "accelerometer",
-};
-
-constexpr robo::motor::Webots::Info wheel_l {
-    .name = "motor5",
-    .dir = robo::motor::dir::forward,
-};
-constexpr robo::motor::Webots::Info wheel_r {
-    .name = "motor6",
-    .dir = robo::motor::dir::forward,
-};
-constexpr robo::motor::Webots::Info joint_l2 {
-    .name = "motor1",
-    .dir = robo::motor::dir::reverse,
-};
-constexpr robo::motor::Webots::Info joint_l1 {
-    .name = "motor3",
-    .dir = robo::motor::dir::forward,
-};
-constexpr robo::motor::Webots::Info joint_r2 {
-    .name = "motor2",
-    .dir = robo::motor::dir::reverse,
-};
-constexpr robo::motor::Webots::Info joint_r1 {
-    .name = "motor4",
-    .dir = robo::motor::dir::forward,
-};
-
 constexpr robo::input::Gamepad::Info gamepad {
     .name = "/dev/input/js0",
     .offline_timeout = std::chrono::nanoseconds::max(),
-    .context = context,
+    .context = c_context,
 };
+
+constexpr robo::imu::Dm::Info imu {
+    .io = serial_imu,
+    .offline_timeout = 10ms,
+};
+
+constexpr robo::motor::Unitree::Info wheel_l {{
+    .io = serial_motor_0_1,
+    .offline_timeout = 10ms,
+    .id = 0_b,
+    .type = robo::motor::Unitree::type::go_m8010_6,
+    .dir = robo::motor::dir::forward,
+}};
+constexpr robo::motor::Unitree::Info wheel_r {{
+    .io = serial_motor_0_1,
+    .offline_timeout = 10ms,
+    .id = 1_b,
+    .type = robo::motor::Unitree::type::go_m8010_6,
+    .dir = robo::motor::dir::forward,
+}};
+constexpr robo::motor::Unitree::Info joint_l1 {{
+    .io = serial_motor_2_3,
+    .offline_timeout = 10ms,
+    .id = 2_b,
+    .type = robo::motor::Unitree::type::go_m8010_6,
+    .dir = robo::motor::dir::forward,
+}};
+constexpr robo::motor::Unitree::Info joint_l2 {{
+    .io = serial_motor_2_3,
+    .offline_timeout = 10ms,
+    .id = 3_b,
+    .type = robo::motor::Unitree::type::go_m8010_6,
+    .dir = robo::motor::dir::forward,
+}};
+constexpr robo::motor::Unitree::Info joint_r1 {{
+    .io = serial_motor_4_5,
+    .offline_timeout = 10ms,
+    .id = 4_b,
+    .type = robo::motor::Unitree::type::go_m8010_6,
+    .dir = robo::motor::dir::forward,
+}};
+constexpr robo::motor::Unitree::Info joint_r2 {{
+    .io = serial_motor_4_5,
+    .offline_timeout = 10ms,
+    .id = 5_b,
+    .type = robo::motor::Unitree::type::go_m8010_6,
+    .dir = robo::motor::dir::forward,
+}};
 
 ///////////////////////////////////////////
 // ctrl
@@ -70,7 +121,9 @@ constexpr robo::ctrl::FiveBarInfo leg_r {
 };
 
 constexpr robo::chassis::WheelLegInfo wheel_leg {
+    .context = p_context,
     .ctrl_period = 1ms,
+    .motor_ctrl_interval = 300us,
 
     .imu = imu,
     .leg_left = leg_l,
@@ -144,8 +197,8 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
 constexpr robo::bot::WheelLegInfo info {
     .input = gamepad,
     .wheel_leg = wheel_leg,
-    .forward_ratio = wheel_leg.limit.speed_set.max, // TODO
-    .turning_ratio = wheel_leg.limit.yaw_err_set.max, // TODO
+    .forward_ratio = wheel_leg.limit.speed_set.max,
+    .turning_ratio = wheel_leg.limit.yaw_err_set.max,
 };
 
 ///////////////////////////////////////////

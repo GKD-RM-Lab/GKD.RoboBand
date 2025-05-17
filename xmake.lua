@@ -65,6 +65,19 @@ target("src") do
     end
 end
 
+target("test") do
+    set_default(false)
+    set_kind("binary")
+    add_deps("src")
+    add_files("app/test.cc")
+end
+
+target("wheel_leg.real") do
+    set_default(false)
+    set_kind("binary")
+    add_deps("src")
+    add_files("app/wheel_leg/real.cc")
+end
 if has_config("use_webots") then
     target("wheel_leg.webots") do
         set_default(false)
@@ -72,12 +85,5 @@ if has_config("use_webots") then
         add_deps("src")
         add_files("app/wheel_leg/webots.cc")
     end
-end
-
-target("test") do
-    set_default(false)
-    set_kind("binary")
-    add_deps("src")
-    add_files("app/test.cc")
 end
 

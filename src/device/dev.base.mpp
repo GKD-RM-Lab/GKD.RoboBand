@@ -18,5 +18,12 @@ public:
     bool offline() { return spt::time::now() - tick_time_ > offline_timeout_; }
     void tick() { tick_time_ = spt::time::now(); }
 };
+
+bool is_offline(auto&... devs)
+    requires (requires(decltype(devs) d) {
+        { d.offline() } -> std::same_as<bool>;
+    } and ...) {
+    return (devs.offline() or ...);
+}
 } // namespace robo::dev
 

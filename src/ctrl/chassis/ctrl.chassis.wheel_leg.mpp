@@ -58,6 +58,7 @@ struct WheelLegInfo {
             float max;
             float delta_max;
             float dead_zone;
+            float recalculate_delta;
         } speed_set;
         struct {
             float max;
@@ -126,7 +127,7 @@ public:
     void run() { started_ = true; };
 #ifdef USE_WEBOTS
     void init() requires Info::use_webots {
-        while (imu.offline());
+        while (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2));
         // TODO displacement_offset
         phi_offset = imu.angle(imu::axis::yaw);
         leg_left.motor1.setAngle(3.447f);
@@ -134,7 +135,11 @@ public:
         leg_right.motor1.setAngle(3.447f);
         leg_right.motor2.setAngle(3.447f);
     }
+    void init() requires (not Info::use_webots) {
+#else
+    void init() {
 #endif
+    }
 
 private:
     auto wheel_left_ground_angle() -> std::pair<float, float> {
@@ -160,7 +165,8 @@ private:
 
     void ctrl_loop() {
         if (not started_) return;
-        // TODO offline test
+        if (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) return;
+        // TODO offline handle
    
         // state update
         leg_left.update();
@@ -177,7 +183,6 @@ private:
         float dot_s_leg = (leg_left.length().second  * std::sin(theta_l_1) + leg_left.length().first  * dot_theta_l_1 * std::cos(theta_l_1) +
                            leg_right.length().second * std::sin(theta_l_2) + leg_right.length().first * dot_theta_l_2 * std::cos(theta_l_2)) / 2.0f;
         auto [speed, _] = speed_observer(dot_s + dot_s_leg, imu.acc(imu::axis::x));
-        float speed_origin = dot_s + dot_s_leg;
         dot_s = speed - dot_s_leg;
 
         float s = wheel_displacement_avg();
@@ -202,52 +207,58 @@ private:
         math::abs_limit(theta_b, this->limit.theta_b_ref_max);
 
         // control
-        Eigen::Vector<float, 10> state_ref {};
-        state_ref << s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b;
-        float height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
-
-        Eigen::Vector<float, 10> state_set {};
-        state_set.setZero();
-        state_set(0) = -s_leg;
-        state_set(1) = speed_set - dot_s_leg;
-        state_set(2) = state_ref(2) + yaw_err_set;
-        Eigen::Vector<float, 10> state_err = state_set - state_ref;
-
-        Eigen::Vector<float, 4> ctrl_vec = K * state_err;
-        // TODO limit joint torque (ctrl_vec(2, 3))
-
-        float f_inertial {}; // TODO
-        float f_l = pid_height(height_set, height_ref); // TODO
-        float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
-
-        Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
-        Eigen::Vector<float, 2> f_n = trans * f_ctrl;
-
+        Eigen::Vector<float, 2> f_n;
+        Eigen::Vector<float, 4> ctrl_vec;
+        float f1_l {}, f2_l {}, f1_r {}, f2_r {};
         if (emergency_stopped) {
             f_n.setZero();
             ctrl_vec.setZero();
+        } else {
+            Eigen::Vector<float, 10> state_ref { s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b };
+            float height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
+
+            Eigen::Vector<float, 10> state_set;
+            state_set.setZero();
+            state_set(0) = -s_leg;
+            state_set(1) = speed_set - dot_s_leg;
+            state_set(2) = state_ref(2) + yaw_err_set;
+            Eigen::Vector<float, 10> state_err = state_set - state_ref;
+
+            do {
+                ctrl_vec = K * state_err;
+
+                float f_inertial {}; // TODO
+                float f_l = pid_height(height_set, height_ref); // TODO
+                float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
+
+                Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
+                f_n = trans * f_ctrl;
+
+                std::tie(f1_l, f2_l) = leg_left.calcForce(f_n(0), ctrl_vec(2));
+                std::tie(f1_r, f2_r) = leg_right.calcForce(f_n(1), ctrl_vec(3));
+                state_err(1) = (std::abs(state_err(1)) <= this->limit.speed_set.recalculate_delta) ? 0.0f : state_err(1) - std::copysign(this->limit.speed_set.recalculate_delta, state_err(1));
+            } while (state_err(1) != 0.0f and 
+                     (ctrl_vec(0) > wheel_left.torque_max() or 
+                      ctrl_vec(1) > wheel_right.torque_max() or 
+                      f1_l > leg_left.motor1.torque_max() or
+                      f2_l > leg_left.motor2.torque_max() or
+                      f1_r > leg_right.motor1.torque_max() or
+                      f2_r > leg_right.motor2.torque_max()));
         }
 
+        wheel_left.setTorque(ctrl_vec(0));
+        leg_left.motor1.setTorque(f1_l);
+        leg_right.motor1.setTorque(f1_r);
 #ifdef USE_WEBOTS
-        if constexpr (Info::use_webots) {
-            wheel_left.setTorque(ctrl_vec(0));
-            wheel_right.setTorque(ctrl_vec(1));
-            leg_left.setForce(f_n(0), ctrl_vec(2));
-            leg_right.setForce(f_n(1), ctrl_vec(3));
-        } else {
+        if constexpr (not Info::use_webots) {
 #endif
-            auto [f1_l, f2_l] = leg_left.calcForce(f_n(0), ctrl_vec(2));
-            auto [f1_r, f2_r] = leg_right.calcForce(f_n(1), ctrl_vec(3));
-            wheel_left.setTorque(ctrl_vec(0));
-            leg_left.motor1.setTorque(f1_l);
-            leg_right.motor1.setTorque(f1_r);
             std::this_thread::sleep_for(this->motor_ctrl_interval);
-            wheel_right.setTorque(ctrl_vec(1));
-            leg_left.motor2.setTorque(f2_l);
-            leg_right.motor2.setTorque(f2_r);
 #ifdef USE_WEBOTS
         }
 #endif
+        wheel_right.setTorque(ctrl_vec(1));
+        leg_left.motor2.setTorque(f2_l);
+        leg_right.motor2.setTorque(f2_r);
     }
     
 public:
