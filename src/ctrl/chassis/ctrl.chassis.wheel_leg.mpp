@@ -33,6 +33,7 @@ struct WheelLegInfo {
         explicit RealSp(const Info& info) :
             pid_retract { ctrl::pid{info.pid_retract}, ctrl::pid{info.pid_retract}, ctrl::pid{info.pid_retract}, ctrl::pid{info.pid_retract} } {}
     };
+#ifdef USE_WEBOTS
     struct WebotsSp {
         struct Info {
             using type = WebotsSp;
@@ -41,7 +42,6 @@ struct WheelLegInfo {
         explicit WebotsSp(const Info&) {}
     };
 
-#ifdef USE_WEBOTS
     static constexpr bool use_webots = [] {
         bool leg = Leg::use_webots;
         bool m = std::same_as<M, motor::Webots::Info>;
@@ -52,7 +52,7 @@ struct WheelLegInfo {
 
     using Sp = std::conditional_t<use_webots, typename WebotsSp::Info, typename RealSp::Info>;
 #else
-    using Sp = RealSp;
+    using Sp = RealSp::Info;
 #endif
 
     std::chrono::nanoseconds ctrl_period;
@@ -167,17 +167,19 @@ public:
 #else
     void init() {
 #endif
-        while (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2));
-        std::this_thread::sleep_for(200ms);
+        auto t { std::chrono::steady_clock::now() };
+        while (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) {
+            setZeroTorque();
+            t += this->ctrl_period;
+            std::this_thread::sleep_until(t);
+        }
 
         std::array<std::reference_wrapper<typename M::dev_type>, 4> motor { leg_left.motor1, leg_right.motor1, leg_left.motor2, leg_right.motor2 };
         auto t_start { std::chrono::steady_clock::now() };
-        auto t { t_start };
+        t = t_start;
         while (true) {
-            t += this->ctrl_period;
-            std::this_thread::sleep_until(t);
-
-            if (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) continue;
+            // TODO offline
+            // if (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) continue;
             phi_offset = imu.angle(imu::axis::yaw);
             auto retract = [&, this](auto... i) {
                 ((motor[i].get().setTorque(sp.pid_retract[i](this->special.retract_speed, motor[i].get().speed()))), ...);
@@ -200,14 +202,15 @@ public:
                     break;
                 }
             }
+
+            t += this->ctrl_period;
+            std::this_thread::sleep_until(t);
         }
 
         while (true) {
-            motor[0].get().setTorque(0.0f);
-            motor[1].get().setTorque(0.0f);
-            std::this_thread::sleep_for(this->special.motor_ctrl_interval);
-            motor[2].get().setTorque(0.0f);
-            motor[3].get().setTorque(0.0f);
+            setZeroTorque();
+            t += this->ctrl_period;
+            std::this_thread::sleep_until(t);
         }
     }
 
@@ -233,10 +236,30 @@ private:
         return (wheel_left_ground_angle().second + wheel_right_ground_angle().second) * this->constant.wheel_radius / 2.0f;
     }
 
+    void setTorque(float wl, float wr, float ll1, float ll2, float lr1, float lr2) {
+        wheel_left.setTorque(wl);
+        leg_left.motor1.setTorque(ll1);
+        leg_right.motor1.setTorque(lr1);
+#ifdef USE_WEBOTS
+        if constexpr (not Info::use_webots) {
+#endif
+            std::this_thread::sleep_for(this->special.motor_ctrl_interval);
+#ifdef USE_WEBOTS
+        }
+#endif
+        wheel_right.setTorque(wr);
+        leg_left.motor2.setTorque(ll2);
+        leg_right.motor2.setTorque(lr2);
+    }
+    void setZeroTorque() {
+        setTorque(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
     void ctrl_loop() {
         if (not started_) return;
-        if (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) return;
-        // TODO offline handle
+        if (emergency_stopped or dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) {
+            setZeroTorque();
+        }
    
         // state update
         leg_left.update();
@@ -277,60 +300,42 @@ private:
         math::abs_limit(theta_b, this->limit.theta_b_ref_max);
 
         // control
-        Eigen::Vector<float, 2> f_n;
         Eigen::Vector<float, 4> ctrl_vec;
         float f1_l {}, f2_l {}, f1_r {}, f2_r {};
-        if (emergency_stopped) {
-            f_n.setZero();
-            ctrl_vec.setZero();
-        } else {
-            Eigen::Vector<float, 10> state_ref { s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b };
-            float height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
+        Eigen::Vector<float, 10> state_ref { s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b };
+        float height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
 
-            Eigen::Vector<float, 10> state_set;
-            state_set.setZero();
-            state_set(0) = -s_leg;
-            state_set(1) = speed_set - dot_s_leg;
-            state_set(2) = state_ref(2) + yaw_err_set;
-            Eigen::Vector<float, 10> state_err = state_set - state_ref;
+        Eigen::Vector<float, 10> state_set;
+        state_set.setZero();
+        state_set(0) = -s_leg;
+        state_set(1) = speed_set - dot_s_leg;
+        state_set(2) = state_ref(2) + yaw_err_set;
+        Eigen::Vector<float, 10> state_err = state_set - state_ref;
 
-            do {
-                ctrl_vec = K * state_err;
+        do {
+            ctrl_vec = K * state_err;
 
-                float f_inertial {}; // TODO
-                float f_l = pid_height(height_set, height_ref); // TODO
-                float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
+            float f_inertial {}; // TODO
+            float f_l = pid_height(height_set, height_ref); // TODO
+            float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
 
-                Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
-                f_n = trans * f_ctrl;
+            Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
+            Eigen::Vector<float, 2> f_n = trans * f_ctrl;
 
-                std::tie(f1_l, f2_l) = leg_left.calcForce(f_n(0), ctrl_vec(2));
-                std::tie(f1_r, f2_r) = leg_right.calcForce(f_n(1), ctrl_vec(3));
+            std::tie(f1_l, f2_l) = leg_left.calcForce(f_n(0), ctrl_vec(2));
+            std::tie(f1_r, f2_r) = leg_right.calcForce(f_n(1), ctrl_vec(3));
 
-                // TODO recalculate_delta? -> next time
-                state_err(1) = (std::abs(state_err(1)) <= this->limit.speed_set.recalculate_delta) ? 0.0f : state_err(1) - std::copysign(this->limit.speed_set.recalculate_delta, state_err(1));
-            } while (state_err(1) != 0.0f and 
-                     (ctrl_vec(0) > wheel_left.torque_max() or 
-                      ctrl_vec(1) > wheel_right.torque_max() or 
-                      f1_l > leg_left.motor1.torque_max() or
-                      f2_l > leg_left.motor2.torque_max() or
-                      f1_r > leg_right.motor1.torque_max() or
-                      f2_r > leg_right.motor2.torque_max()));
-        }
+            // TODO recalculate_delta? -> next time
+            state_err(1) = (std::abs(state_err(1)) <= this->limit.speed_set.recalculate_delta) ? 0.0f : state_err(1) - std::copysign(this->limit.speed_set.recalculate_delta, state_err(1));
+        } while (state_err(1) != 0.0f and 
+                    (ctrl_vec(0) > wheel_left.torque_max() or 
+                    ctrl_vec(1) > wheel_right.torque_max() or 
+                    f1_l > leg_left.motor1.torque_max() or
+                    f2_l > leg_left.motor2.torque_max() or
+                    f1_r > leg_right.motor1.torque_max() or
+                    f2_r > leg_right.motor2.torque_max()));
 
-        wheel_left.setTorque(ctrl_vec(0));
-        leg_left.motor1.setTorque(f1_l);
-        leg_right.motor1.setTorque(f1_r);
-#ifdef USE_WEBOTS
-        if constexpr (not Info::use_webots) {
-#endif
-            std::this_thread::sleep_for(this->special.motor_ctrl_interval);
-#ifdef USE_WEBOTS
-        }
-#endif
-        wheel_right.setTorque(ctrl_vec(1));
-        leg_left.motor2.setTorque(f2_l);
-        leg_right.motor2.setTorque(f2_r);
+        setTorque(ctrl_vec(0), ctrl_vec(1), f1_l, f2_l, f1_r, f2_r);
     }
     
 public:

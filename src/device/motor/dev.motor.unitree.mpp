@@ -138,6 +138,8 @@ private:
         if (state_ != state::normal) {
             // TODO log
         }
+
+        tick();
     }
 };
 static_assert(dev::motor<Unitree::Info>);

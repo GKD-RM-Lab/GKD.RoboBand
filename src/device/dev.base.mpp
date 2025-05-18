@@ -3,14 +3,17 @@ export module robo:dev.base;
 import std;
 import :spt.misc;
 import :spt.time;
+using namespace std::chrono_literals;
 
 export namespace robo::dev {
 struct Dev :
     public spt::immovable_base, 
     public spt::not_copyable_base {
 protected:
-    std::chrono::nanoseconds tick_time_ { spt::time::now() };
     const std::chrono::nanoseconds offline_timeout_;
+    std::chrono::nanoseconds tick_time_ { 
+        spt::time::now() - (offline_timeout_ == std::chrono::nanoseconds::max() ? 0ns : offline_timeout_)
+    };
 
 public:
     Dev(const std::chrono::nanoseconds offline_timeout) : offline_timeout_ { offline_timeout } {}
