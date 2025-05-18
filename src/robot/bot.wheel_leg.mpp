@@ -60,7 +60,7 @@ public:
         spt::task_context::start();
         wheel_leg.init();
         wheel_leg.run();
-        task_context::wait_for(Info::wheel_leg.context);
+        task_context::wait_for(Info::wheel_leg.special.context);
     }
 };
 template <typename In, typename WL>

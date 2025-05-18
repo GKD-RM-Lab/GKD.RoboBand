@@ -17,6 +17,30 @@ class WheelLeg;
 template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
 struct WheelLegInfo {
     using ctrl_type = WheelLeg<Imu, Leg, M>;
+
+    struct RealSp {
+        struct Info {
+            using type = RealSp;
+            spt::task_context::periodic::info context;
+            std::chrono::nanoseconds motor_ctrl_interval;
+            ctrl::pid::param pid_retract;
+            std::chrono::nanoseconds retract_time_min;
+            float retract_speed;
+            float retract_stop_speed;
+            float joint_limit_angle;
+        };
+        std::array<ctrl::pid, 4> pid_retract;
+        explicit RealSp(const Info& info) :
+            pid_retract { ctrl::pid{info.pid_retract}, ctrl::pid{info.pid_retract}, ctrl::pid{info.pid_retract}, ctrl::pid{info.pid_retract} } {}
+    };
+    struct WebotsSp {
+        struct Info {
+            using type = WebotsSp;
+            spt::task_context::periodic::info context { spt::task_context::periodic::info::webots() };
+        };
+        explicit WebotsSp(const Info&) {}
+    };
+
 #ifdef USE_WEBOTS
     static constexpr bool use_webots = [] {
         bool leg = Leg::use_webots;
@@ -26,20 +50,20 @@ struct WheelLegInfo {
         throw std::logic_error{ "mixing webots types and real types." };
     }();
 
-    spt::task_context::periodic::info context { spt::task_context::periodic::info::webots() };
-    std::chrono::nanoseconds ctrl_period;
-    std::chrono::nanoseconds motor_ctrl_interval { std::chrono::nanoseconds::max() };
+    using Sp = std::conditional_t<use_webots, typename WebotsSp::Info, typename RealSp::Info>;
 #else
-    spt::task_context::periodic::info context;
-    std::chrono::nanoseconds ctrl_period;
-    std::chrono::nanoseconds motor_ctrl_interval;
+    using Sp = RealSp;
 #endif
+
+    std::chrono::nanoseconds ctrl_period;
 
     Imu imu;
     Leg leg_left;
     Leg leg_right;
     M wheel_left;
     M wheel_right;
+
+    Sp special;
 
     struct {
         float f_gravity;
@@ -50,6 +74,7 @@ struct WheelLegInfo {
         struct {
             float min;
             float max;
+            float mid;
         } height_set;
         struct {
             float stop_dead_zone;
@@ -65,7 +90,6 @@ struct WheelLegInfo {
             float delta_max;
             float dead_zone;
         } yaw_err_set;
-        float s_ref_max;
         float phi_err_max;
         float theta_l_ref_max;
         float theta_b_ref_max;
@@ -88,6 +112,8 @@ public:
     using Info = WheelLegInfo<Imu, Leg, M>;
 
 private:
+    Info::Sp::type sp { Info::special };
+
     bool started_ { false };
     bool emergency_stopped { false };
 
@@ -117,11 +143,13 @@ public:
     explicit WheelLeg(const Info& info) : 
         Info { info } {
 #ifdef USE_WEBOTS
-        if (not this->context.test(Info::use_webots)) {
-            throw std::logic_error{ "wrong context type." };
+        if (not this->special.context.test(Info::use_webots)) {
+            throw std::logic_error{ 
+                std::format("wrong context type: {}", this->special.context.desc())
+            };
         }
 #endif
-        spt::task_context::add_task(this->context, this->ctrl_period, [this] { ctrl_loop(); });
+        spt::task_context::add_task(this->special.context, this->ctrl_period, [this] { ctrl_loop(); });
     }
 
     void run() { started_ = true; };
@@ -139,6 +167,48 @@ public:
 #else
     void init() {
 #endif
+        while (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2));
+        std::this_thread::sleep_for(200ms);
+
+        std::array<std::reference_wrapper<typename M::dev_type>, 4> motor { leg_left.motor1, leg_right.motor1, leg_left.motor2, leg_right.motor2 };
+        auto t_start { std::chrono::steady_clock::now() };
+        auto t { t_start };
+        while (true) {
+            t += this->ctrl_period;
+            std::this_thread::sleep_until(t);
+
+            if (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) continue;
+            phi_offset = imu.angle(imu::axis::yaw);
+            auto retract = [&, this](auto... i) {
+                ((motor[i].get().setTorque(sp.pid_retract[i](this->special.retract_speed, motor[i].get().speed()))), ...);
+            };
+            retract(0uz, 1uz);
+            std::this_thread::sleep_for(this->special.motor_ctrl_interval);
+            retract(2uz, 3uz);
+
+            if (t - t_start > this->special.retract_time_min) {
+                bool stopped { true };
+                for (auto& m : motor) {
+                    if (std::abs(m.get().speed()) > this->special.retract_stop_speed) {
+                        stopped = false;
+                    }
+                }
+                if (stopped) {
+                    for (auto& m : motor) {
+                        m.get().setAngle(this->special.joint_limit_angle);
+                    }
+                    break;
+                }
+            }
+        }
+
+        while (true) {
+            motor[0].get().setTorque(0.0f);
+            motor[1].get().setTorque(0.0f);
+            std::this_thread::sleep_for(this->special.motor_ctrl_interval);
+            motor[2].get().setTorque(0.0f);
+            motor[3].get().setTorque(0.0f);
+        }
     }
 
 private:
@@ -236,6 +306,8 @@ private:
 
                 std::tie(f1_l, f2_l) = leg_left.calcForce(f_n(0), ctrl_vec(2));
                 std::tie(f1_r, f2_r) = leg_right.calcForce(f_n(1), ctrl_vec(3));
+
+                // TODO recalculate_delta? -> next time
                 state_err(1) = (std::abs(state_err(1)) <= this->limit.speed_set.recalculate_delta) ? 0.0f : state_err(1) - std::copysign(this->limit.speed_set.recalculate_delta, state_err(1));
             } while (state_err(1) != 0.0f and 
                      (ctrl_vec(0) > wheel_left.torque_max() or 
@@ -252,7 +324,7 @@ private:
 #ifdef USE_WEBOTS
         if constexpr (not Info::use_webots) {
 #endif
-            std::this_thread::sleep_for(this->motor_ctrl_interval);
+            std::this_thread::sleep_for(this->special.motor_ctrl_interval);
 #ifdef USE_WEBOTS
         }
 #endif

@@ -78,6 +78,8 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
     .wheel_left = wheel_l,
     .wheel_right = wheel_r,
 
+    .special = {},
+
     .constant = {
         .f_gravity = 33.0f,
         .wheel_radius = 0.10f,
@@ -85,8 +87,9 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
 
     .limit = {
         .height_set = { 
-            .min = 0.10f, // TODO
-            .max = 0.50f, // TODO
+            .min = 0.22f,
+            .max = 0.32f,
+            .mid = 0.27f,
         },
         .speed = {
             .stop_dead_zone = 0.5f,
@@ -95,17 +98,16 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             .max = 2.5f, // TODO
             .delta_max = 5.0f, // TODO
             .dead_zone = 0.3f, // TODO
-            .recalculate_delta = 0.1f // TODO
+            .recalculate_delta = 0.3f // TODO
         },
         .yaw_err_set = {
             .max = 0.0f, // TODO
             .delta_max = 10.0f, // TODO
             .dead_zone = 0.1f, // TODO
         },
-        .s_ref_max = 0.3f,
         .phi_err_max = 0.3f,
         .theta_l_ref_max = 0.7f,
-        .theta_b_ref_max = 0.1f,
+        .theta_b_ref_max = 0.3f,
     },
 
     .param = {
@@ -144,8 +146,8 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
 constexpr robo::bot::WheelLegInfo info {
     .input = gamepad,
     .wheel_leg = wheel_leg,
-    .forward_ratio = wheel_leg.limit.speed_set.max, // TODO
-    .turning_ratio = wheel_leg.limit.yaw_err_set.max, // TODO
+    .forward_ratio = wheel_leg.limit.speed_set.max,
+    .turning_ratio = wheel_leg.limit.yaw_err_set.max,
 };
 
 ///////////////////////////////////////////

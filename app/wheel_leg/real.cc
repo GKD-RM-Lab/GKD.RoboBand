@@ -67,7 +67,7 @@ constexpr robo::motor::Unitree::Info wheel_r {{
     .offline_timeout = 10ms,
     .id = 1_b,
     .type = robo::motor::Unitree::type::go_m8010_6,
-    .dir = robo::motor::dir::forward,
+    .dir = robo::motor::dir::reverse,
 }};
 constexpr robo::motor::Unitree::Info joint_l1 {{
     .io = serial_motor_2_3,
@@ -81,7 +81,7 @@ constexpr robo::motor::Unitree::Info joint_l2 {{
     .offline_timeout = 10ms,
     .id = 3_b,
     .type = robo::motor::Unitree::type::go_m8010_6,
-    .dir = robo::motor::dir::forward,
+    .dir = robo::motor::dir::reverse,
 }};
 constexpr robo::motor::Unitree::Info joint_r1 {{
     .io = serial_motor_4_5,
@@ -95,7 +95,7 @@ constexpr robo::motor::Unitree::Info joint_r2 {{
     .offline_timeout = 10ms,
     .id = 5_b,
     .type = robo::motor::Unitree::type::go_m8010_6,
-    .dir = robo::motor::dir::forward,
+    .dir = robo::motor::dir::reverse,
 }};
 
 ///////////////////////////////////////////
@@ -104,32 +104,46 @@ constexpr robo::motor::Unitree::Info joint_r2 {{
 constexpr robo::ctrl::FiveBarInfo leg_l {
     .motor1 = joint_l1,
     .motor2 = joint_l2,
-    .l_a = 0.06f,
-    .l_b = 0.2f,
-    .l_c = 0.3f,
+    .l_a = 0.07f,
+    .l_b = 0.17f,
+    .l_c = 0.285f,
     .wheel_fixed_side = 2,
     .forward_installation = true,
 };
 constexpr robo::ctrl::FiveBarInfo leg_r {
     .motor1 = joint_r1,
     .motor2 = joint_r2,
-    .l_a = 0.06f,
-    .l_b = 0.2f,
-    .l_c = 0.3f,
+    .l_a = 0.07f,
+    .l_b = 0.17f,
+    .l_c = 0.285f,
     .wheel_fixed_side = 2,
-    .forward_installation = true,
+    .forward_installation = false,
 };
 
 constexpr robo::chassis::WheelLegInfo wheel_leg {
-    .context = p_context,
     .ctrl_period = 1ms,
-    .motor_ctrl_interval = 300us,
 
     .imu = imu,
     .leg_left = leg_l,
     .leg_right = leg_r,
     .wheel_left = wheel_l,
     .wheel_right = wheel_r,
+
+    .special = {
+        .context = p_context,
+        .motor_ctrl_interval = 300us,
+        .pid_retract = {
+            .kp = 0.75f,
+            .ki = 0.1f,
+            .kd = 0.0f,
+            .max_iout = 0.0f,
+            .max_out = 5.0f,
+        },
+        .retract_time_min = 500ms,
+        .retract_speed = 6.0f,
+        .retract_stop_speed = 0.02f,
+        .joint_limit_angle = 3.49f,
+    },
 
     .constant = {
         .f_gravity = 33.0f,
@@ -138,35 +152,35 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
 
     .limit = {
         .height_set = { 
-            .min = 0.10f, // TODO
-            .max = 0.50f, // TODO
+            .min = 0.22f,
+            .max = 0.32f,
+            .mid = 0.27f,
         },
         .speed = {
-            .stop_dead_zone = 0.5f,
+            .stop_dead_zone = 0.2f,
         },
         .speed_set = {
-            .max = 2.5f, // TODO
-            .delta_max = 5.0f, // TODO
-            .dead_zone = 0.3f, // TODO
-            .recalculate_delta = 0.1f // TODO
+            .max = 1.0f,
+            .delta_max = 3.0f,
+            .dead_zone = 0.3f,
+            .recalculate_delta = 0.3f,
         },
         .yaw_err_set = {
             .max = 0.0f, // TODO
             .delta_max = 10.0f, // TODO
             .dead_zone = 0.1f, // TODO
         },
-        .s_ref_max = 0.3f,
         .phi_err_max = 0.3f,
         .theta_l_ref_max = 0.7f,
-        .theta_b_ref_max = 0.1f,
+        .theta_b_ref_max = 0.3f,
     },
 
     .param = {
         .K = {
-            -4.897f, -6.659f, -4.447f, -0.660f, -25.649f, -2.170f, -3.080f, -0.751f, -10.089f, -0.863f,
-            -4.897f, -6.659f, 4.447f, 0.660f, -3.080f, -0.751f, -25.649f, -2.170f, -10.089f, -0.863f,
-            1.009f, 1.329f, -15.173f, -2.479f, 9.472f, 0.498f, -4.430f, -0.018f, -48.971f, -2.084f,
-            1.009f, 1.329f, 15.173f, 2.479f, -4.430f, -0.018f, 9.472f, 0.498f, -48.971f, -2.084f
+            -4.9529f,  -6.0926f,  -10.151f,  -0.66441f,  -24.1f,  -2.0052f,  -4.887f,  -0.9113f,  -7.8273f,  -0.60803f, 
+            -4.9529f,  -6.0926f,  10.151f,  0.66441f,  -4.887f,  -0.9113f,  -24.1f,  -2.0052f,  -7.8273f,  -0.60803f, 
+            0.6846f,  0.82061f,  -12.123f,  -1.4456f,  15.743f,  1.0686f,  -11.658f,  -0.71293f,  -49.781f,  -2.1164f, 
+            0.6846f,  0.82061f,  12.123f,  1.4456f,  -11.658f,  -0.71293f,  15.743f,  1.0686f,  -49.781f,  -2.1164f,
         },
         .pid_height = {
             .kp = 400.0f,

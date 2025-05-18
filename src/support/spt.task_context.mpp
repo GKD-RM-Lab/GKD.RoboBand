@@ -83,7 +83,15 @@ public:
         consteval info(task_context::detail::info_base<info> info_base) :
             task_context::detail::info_base<info> { info_base } {}
         auto desc() const { 
-            return std::format("continuous task context (id:{})", id);
+#ifdef USE_WEBOTS
+            if (is_for_webots()) {
+                return std::format("continuous task context (for webots)");
+            } else {
+#endif
+                return std::format("continuous task context (id:{})", id);
+#ifdef USE_WEBOTS
+            }
+#endif
         }
     };
     using info_type = info;
@@ -160,7 +168,15 @@ public:
         consteval info(task_context::detail::info_base<info> info_base) :
             task_context::detail::info_base<info> { info_base } {}
         auto desc() const { 
-            return std::format("periodic task context (id:{})", id);
+#ifdef USE_WEBOTS
+            if (is_for_webots()) {
+                return std::format("periodic task context (for webots)");
+            } else {
+#endif
+                return std::format("periodic task context (id:{})", id);
+#ifdef USE_WEBOTS
+            }
+#endif
         }
     };
     using info_type = info;
