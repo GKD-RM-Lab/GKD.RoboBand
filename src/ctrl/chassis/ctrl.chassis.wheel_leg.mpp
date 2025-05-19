@@ -9,6 +9,7 @@ import :dev;
 import :ctrl.basic;
 import :ctrl.leg;
 import :spt;
+namespace stdr = std::ranges;
 
 export namespace robo::ctrl::chassis {
 template <dev::imu Imu, ctrl::leg Leg, dev::motor M>
@@ -43,8 +44,8 @@ struct WheelLegInfo {
     };
 
     static constexpr bool use_webots = [] {
-        bool leg = Leg::use_webots;
-        bool m = std::same_as<M, motor::Webots::Info>;
+        constexpr bool leg = Leg::use_webots;
+        constexpr bool m = std::same_as<M, motor::Webots::Info>;
         if (leg and m) return true;
         if (not leg and not m) return false;
         throw std::logic_error{ "mixing webots types and real types." };
@@ -68,6 +69,7 @@ struct WheelLegInfo {
     struct {
         float f_gravity;
         float wheel_radius;
+        float wheel_spacing;
     } constant;
 
     struct {
@@ -77,20 +79,23 @@ struct WheelLegInfo {
             float mid;
         } height_set;
         struct {
-            float stop_dead_zone;
-        } speed;
+            float max;
+            float dead_zone;
+        } roll_set;
         struct {
             float max;
             float delta_max;
             float dead_zone;
+            float stop;
             float recalculate_delta;
         } speed_set;
         struct {
             float max;
             float delta_max;
             float dead_zone;
-        } yaw_err_set;
-        float phi_err_max;
+            float stop;
+            float recalculate_delta;
+        } yaw_speed_set;
         float theta_l_ref_max;
         float theta_b_ref_max;
     } limit;
@@ -118,8 +123,9 @@ private:
     bool emergency_stopped { false };
 
     ctrl::ramp speed_set { 0.0f, this->limit.speed_set.max, this->limit.speed_set.delta_max };
-    ctrl::ramp yaw_err_set { 0.0f, this->limit.yaw_err_set.max, this->limit.yaw_err_set.delta_max };
-    float height_set { this->limit.height_set.min };
+    ctrl::ramp yaw_speed_set { 0.0f, this->limit.yaw_speed_set.max, this->limit.yaw_speed_set.delta_max };
+    float height_set { this->limit.height_set.mid };
+    float roll_set {};
 
     float displacement_offset {};
     float phi_offset {};
@@ -153,11 +159,19 @@ public:
     }
 
     void run() { started_ = true; };
+
+    void emergencyStop() { emergency_stopped = true; }
+    void setSpeed(float val) { speed_set(val); }
+    void setYawSpeed(float val) { yaw_speed_set(val); }
+    void setHeight(float val) { height_set = std::clamp(val, this->limit.height_set.min, this->limit.height_set.max); }
+    void setRoll(float val) { roll_set = math::abs_limited(val, this->limit.roll_set.max); }
+
 #ifdef USE_WEBOTS
     void init() requires Info::use_webots {
         while (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2));
-        // TODO displacement_offset
         phi_offset = imu.angle(imu::axis::yaw);
+        wheel_left.setAngle(0.0f);
+        wheel_right.setAngle(0.0f);
         leg_left.motor1.setAngle(3.447f);
         leg_left.motor2.setAngle(3.447f);
         leg_right.motor1.setAngle(3.447f);
@@ -167,48 +181,39 @@ public:
 #else
     void init() {
 #endif
-        auto t { std::chrono::steady_clock::now() };
-        while (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) {
-            setZeroTorque();
-            t += this->ctrl_period;
-            std::this_thread::sleep_until(t);
-        }
-
         std::array<std::reference_wrapper<typename M::dev_type>, 4> motor { leg_left.motor1, leg_right.motor1, leg_left.motor2, leg_right.motor2 };
-        auto t_start { std::chrono::steady_clock::now() };
-        t = t_start;
+        auto t { std::chrono::steady_clock::now() };
+        auto t_start = t;
         while (true) {
-            // TODO offline
-            // if (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) continue;
-            phi_offset = imu.angle(imu::axis::yaw);
-            auto retract = [&, this](auto... i) {
-                ((motor[i].get().setTorque(sp.pid_retract[i](this->special.retract_speed, motor[i].get().speed()))), ...);
-            };
-            retract(0uz, 1uz);
-            std::this_thread::sleep_for(this->special.motor_ctrl_interval);
-            retract(2uz, 3uz);
+            if (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) {
+                setZeroTorque();
+                t_start = t;
+            } else {
+                setTorque(0.0f, 0.0f,
+                    sp.pid_retract[0](this->special.retract_speed, motor[0].get().speed()),
+                    sp.pid_retract[1](this->special.retract_speed, motor[1].get().speed()),
+                    sp.pid_retract[2](this->special.retract_speed, motor[2].get().speed()),
+                    sp.pid_retract[3](this->special.retract_speed, motor[3].get().speed())
+                );
 
-            if (t - t_start > this->special.retract_time_min) {
-                bool stopped { true };
-                for (auto& m : motor) {
-                    if (std::abs(m.get().speed()) > this->special.retract_stop_speed) {
-                        stopped = false;
-                    }
-                }
-                if (stopped) {
+                if (t - t_start > this->special.retract_time_min) {
+                    bool stopped { true };
                     for (auto& m : motor) {
-                        m.get().setAngle(this->special.joint_limit_angle);
+                        if (std::abs(m.get().speed()) > this->special.retract_stop_speed) {
+                            stopped = false;
+                        }
                     }
-                    break;
+                    if (stopped) {
+                        for (auto& m : motor) {
+                            m.get().setAngle(this->special.joint_limit_angle);
+                        }
+                        phi_offset = imu.angle(imu::axis::yaw);
+                        wheel_left.setAngle(0.0f);
+                        wheel_right.setAngle(0.0f);
+                        break;
+                    }
                 }
             }
-
-            t += this->ctrl_period;
-            std::this_thread::sleep_until(t);
-        }
-
-        while (true) {
-            setZeroTorque();
             t += this->ctrl_period;
             std::this_thread::sleep_until(t);
         }
@@ -216,17 +221,15 @@ public:
 
 private:
     auto wheel_left_ground_angle() -> std::pair<float, float> {
-        float dir = Info::leg_left.forward_installation ? 1.0f : -1.0f;
         return {
-            wheel_left.angle() - leg_left.wheel_angle_offset().first + dir * imu.angle(imu::axis::pitch),
-            wheel_left.speed() - leg_left.wheel_angle_offset().second + dir * imu.gyro(imu::axis::pitch),
+            wheel_left.angle() + leg_left.wheel_angle_offset().first + imu.angle(imu::axis::pitch),
+            wheel_left.speed() + leg_left.wheel_angle_offset().second + imu.gyro(imu::axis::pitch),
         };
     }
     auto wheel_right_ground_angle() -> std::pair<float, float> {
-        float dir = Info::leg_right.forward_installation ? 1.0f : -1.0f;
         return {
-            wheel_right.angle() - leg_right.wheel_angle_offset().first + dir * imu.angle(imu::axis::pitch),
-            wheel_right.speed() - leg_right.wheel_angle_offset().second + dir * imu.gyro(imu::axis::pitch),
+            wheel_right.angle() + leg_right.wheel_angle_offset().first + imu.angle(imu::axis::pitch),
+            wheel_right.speed() + leg_right.wheel_angle_offset().second + imu.gyro(imu::axis::pitch),
         };
     }
     float wheel_displacement_avg() {
@@ -259,6 +262,7 @@ private:
         if (not started_) return;
         if (emergency_stopped or dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) {
             setZeroTorque();
+            return;
         }
    
         // state update
@@ -281,76 +285,77 @@ private:
         float s = wheel_displacement_avg();
         float s_leg = (leg_left.length().first * std::sin(theta_l_1) + leg_right.length().first * std::sin(theta_l_2)) / 2.0f;
         float displacement = s + s_leg;
-        if (std::abs(speed_set) > this->limit.speed_set.dead_zone or std::abs(speed) > this->limit.speed.stop_dead_zone) {
+        if (std::abs(speed_set) > this->limit.speed_set.dead_zone or std::abs(speed) > this->limit.speed_set.stop) {
             displacement_offset = displacement;
         }
         displacement = displacement - displacement_offset;
         s = displacement - s_leg;
 
         float phi = imu.angle(imu::axis::yaw);
-        if (yaw_err_set != 0.0f) {
+        if (std::abs(yaw_speed_set) > this->limit.yaw_speed_set.dead_zone or std::abs(yaw_speed_set) > this->limit.yaw_speed_set.stop) {
             phi_offset = phi;
         }
         phi = std::remainder(phi - phi_offset, 2.0f * std::numbers::pi_v<float>);
         float dot_phi = imu.gyro(imu::axis::yaw);
 
-        // TODO remove ?
         math::abs_limit(theta_l_1, this->limit.theta_l_ref_max);
         math::abs_limit(theta_l_2, this->limit.theta_l_ref_max);
         math::abs_limit(theta_b, this->limit.theta_b_ref_max);
 
         // control
-        Eigen::Vector<float, 4> ctrl_vec;
-        float f1_l {}, f2_l {}, f1_r {}, f2_r {};
-        Eigen::Vector<float, 10> state_ref { s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b };
+        Eigen::Vector<float, 10> state_ref { 
+            s, dot_s, phi, dot_phi, theta_l_1, dot_theta_l_1, theta_l_2, dot_theta_l_2, theta_b, dot_theta_b 
+        };
         float height_ref = 0.5f * (leg_left.length().first * std::cos(theta_l_1) + leg_right.length().first * std::cos(theta_l_2));
 
         Eigen::Vector<float, 10> state_set;
         state_set.setZero();
         state_set(0) = -s_leg;
         state_set(1) = speed_set - dot_s_leg;
-        state_set(2) = state_ref(2) + yaw_err_set;
+        state_set(3) = yaw_speed_set;
         Eigen::Vector<float, 10> state_err = state_set - state_ref;
 
+        float f_psi = pid_psi((std::abs(roll_set) < this->limit.roll_set.dead_zone) ? 0.0f : roll_set, imu.angle(imu::axis::roll));
+        float f_l = pid_height(height_set, height_ref);
+        float f_inertial = (this->constant.f_gravity / 9.8f) *
+                            (((leg_left.length().first + leg_right.length().first) / 2.0f) / this->constant.wheel_spacing) * 
+                            speed * imu.gyro(imu::axis::roll);
+        Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
+        Eigen::Vector<float, 2> f_n = trans * f_ctrl;
+
+        bool torque_over_limit;
         do {
-            ctrl_vec = K * state_err;
+            torque_over_limit = false;
 
-            float f_inertial {}; // TODO
-            float f_l = pid_height(height_set, height_ref); // TODO
-            float f_psi = pid_psi(0.0f, imu.angle(imu::axis::roll));
-
-            Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
-            Eigen::Vector<float, 2> f_n = trans * f_ctrl;
-
+            Eigen::Vector<float, 4> ctrl_vec = K * state_err;
+            float f1_l {}, f2_l {}, f1_r {}, f2_r {};
             std::tie(f1_l, f2_l) = leg_left.calcForce(f_n(0), ctrl_vec(2));
             std::tie(f1_r, f2_r) = leg_right.calcForce(f_n(1), ctrl_vec(3));
 
-            // TODO recalculate_delta? -> next time
-            state_err(1) = (std::abs(state_err(1)) <= this->limit.speed_set.recalculate_delta) ? 0.0f : state_err(1) - std::copysign(this->limit.speed_set.recalculate_delta, state_err(1));
-        } while (state_err(1) != 0.0f and 
-                    (ctrl_vec(0) > wheel_left.torque_max() or 
-                    ctrl_vec(1) > wheel_right.torque_max() or 
-                    f1_l > leg_left.motor1.torque_max() or
-                    f2_l > leg_left.motor2.torque_max() or
-                    f1_r > leg_right.motor1.torque_max() or
-                    f2_r > leg_right.motor2.torque_max()));
-
-        setTorque(ctrl_vec(0), ctrl_vec(1), f1_l, f2_l, f1_r, f2_r);
-    }
-    
-public:
-    void emergencyStop() { emergency_stopped = true; }
-    void setSpeed(float val) {
-        speed_set(val);
-        if (std::abs(speed_set) < this->limit.speed_set.dead_zone) {
-            speed_set.get() = 0.0f;
-        }
-    }
-    void setYawErr(float val) {
-    }
-    void adjustHeight(float val) {
-        height_set = std::clamp(height_set + val, this->limit.height_set.min, this->limit.height_set.max);
-        height_set = 0.2f; // TODO 
+            std::array ratio {
+                std::abs(ctrl_vec(0)) / wheel_left.torque_max(),
+                std::abs(ctrl_vec(1)) / wheel_right.torque_max(),
+                std::abs(f1_l) / leg_left.motor1.torque_max(),
+                std::abs(f2_l) / leg_left.motor2.torque_max(),
+                std::abs(f1_r) / leg_right.motor1.torque_max(),
+                std::abs(f2_r) / leg_right.motor2.torque_max(),
+            };
+            if (stdr::max(ratio) > 1.0f) {
+                torque_over_limit = true;
+                state_err(1) = (std::abs(state_err(1)) <= this->limit.speed_set.recalculate_delta) ?
+                               0.0f : (state_err(1) - std::copysign(this->limit.speed_set.recalculate_delta, state_err(1)));
+                state_err(3) = (std::abs(state_err(3)) <= this->limit.yaw_speed_set.recalculate_delta) ?
+                               0.0f : (state_err(3) - std::copysign(this->limit.yaw_speed_set.recalculate_delta, state_err(3)));
+                if (state_err(1) == 0.0f and state_err(3) == 0.0f) {
+                    auto limit = [ratio = stdr::max(ratio)](auto&... f) { ((f /= ratio), ...); };
+                    limit(ctrl_vec(0), ctrl_vec(1), f1_l, f2_l, f1_r, f2_r);
+                    torque_over_limit = false;
+                } else {
+                    continue;
+                }
+            }
+            setTorque(ctrl_vec(0), ctrl_vec(1), f1_l, f2_l, f1_r, f2_r);
+        } while (torque_over_limit);
     }
 };
 } // namespace robo::ctrl::chassis

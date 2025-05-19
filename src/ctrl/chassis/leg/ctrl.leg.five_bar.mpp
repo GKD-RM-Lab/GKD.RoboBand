@@ -17,8 +17,8 @@ struct FiveBarInfo {
     using ctrl_type = FiveBar<M1, M2>;
 #ifdef USE_WEBOTS
     static constexpr bool use_webots = [] {
-        bool m1 = std::same_as<M1, motor::Webots::Info>;
-        bool m2 = std::same_as<M2, motor::Webots::Info>;
+        constexpr bool m1 = std::same_as<M1, motor::Webots::Info>;
+        constexpr bool m2 = std::same_as<M2, motor::Webots::Info>;
         if (m1 and m2) return true;
         if (not m1 and not m2) return false;
         throw std::logic_error{ "mixing webots types and real types." };
@@ -67,8 +67,14 @@ public:
     }
 
     auto length() const -> std::pair<float, float> { return { l, dot_l }; }
-    auto angle() const -> std::pair<float, float> { return { theta_l, dot_theta_l }; }
-    auto wheel_angle_offset() const { return motor_angle_offset; }
+    auto angle() const -> std::pair<float, float> { 
+        float dir = info_.forward_installation ? 1.0f : -1.0f;
+        return { dir * theta_l, dir * dot_theta_l }; 
+    }
+    auto wheel_angle_offset() const -> std::pair<float, float> { 
+        float dir = (info_.forward_installation xor (info_.wheel_fixed_side == 1 ? true : false)) ? -1.0f : 1.0f;
+        return { dir * motor_angle_offset.first, dir * motor_angle_offset.second };
+    }
 
     void update() {
         // update motors' data
@@ -130,7 +136,8 @@ public:
         Eigen::Vector<float, 2> force_virtual;
         Eigen::Vector<float, 2> force_actual;
 
-        force_virtual << f_n, tau_j;
+        float dir = info_.forward_installation ? 1.0f : -1.0f;
+        force_virtual << f_n, dir * tau_j;
         force_actual = jacobian_trans.transpose() * force_virtual;
         return { force_actual(0), force_actual(1) };
     }

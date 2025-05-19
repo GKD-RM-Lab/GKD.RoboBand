@@ -18,7 +18,9 @@ T abs_limited(const T val, const T limit) {
 
 template <stdr::input_range R>
 void abs_limit(R&& range, const stdr::range_value_t<R> limit) {
-    stdr::transform(range, [limit](auto val) { return abs_limited(val, limit); });
+    for (auto& e : range) {
+        abs_limit(e, limit);
+    }
 }
 void abs_limit(stdr::input_range auto&& range, stdr::input_range auto&& limit) {
     static_assert(std::same_as<stdr::range_value_t<decltype(range)>, stdr::range_value_t<decltype(limit)>>);

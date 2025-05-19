@@ -46,7 +46,6 @@ constexpr robo::io::Serial::Info serial_motor_4_5 {
 ///////////////////////////////////////////
 constexpr robo::input::Gamepad::Info gamepad {
     .name = "/dev/input/js0",
-    .offline_timeout = std::chrono::nanoseconds::max(),
     .context = c_context,
 };
 
@@ -131,13 +130,13 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
 
     .special = {
         .context = p_context,
-        .motor_ctrl_interval = 300us,
+        .motor_ctrl_interval = 360us,
         .pid_retract = {
-            .kp = 0.75f,
-            .ki = 0.1f,
+            .kp = 1.0f,
+            .ki = 0.005f,
             .kd = 0.0f,
-            .max_iout = 0.0f,
-            .max_out = 5.0f,
+            .max_iout = 8.0f,
+            .max_out = 15.0f,
         },
         .retract_time_min = 500ms,
         .retract_speed = 6.0f,
@@ -146,8 +145,9 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
     },
 
     .constant = {
-        .f_gravity = 33.0f,
+        .f_gravity = 40.0f,
         .wheel_radius = 0.10f,
+        .wheel_spacing = 0.38f,
     },
 
     .limit = {
@@ -156,21 +156,24 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             .max = 0.32f,
             .mid = 0.27f,
         },
-        .speed = {
-            .stop_dead_zone = 0.2f,
+        .roll_set = {
+            .max = 0.2f,
+            .dead_zone = 0.02f,
         },
         .speed_set = {
             .max = 1.0f,
             .delta_max = 3.0f,
             .dead_zone = 0.3f,
+            .stop = 0.2f,
             .recalculate_delta = 0.3f,
         },
-        .yaw_err_set = {
-            .max = 0.0f, // TODO
-            .delta_max = 10.0f, // TODO
-            .dead_zone = 0.1f, // TODO
+        .yaw_speed_set = {
+            .max = 1.5f,
+            .delta_max = 6.0f,
+            .dead_zone = 0.2f,
+            .stop = 0.2f,
+            .recalculate_delta = 0.3f,
         },
-        .phi_err_max = 0.3f,
         .theta_l_ref_max = 0.7f,
         .theta_b_ref_max = 0.3f,
     },
@@ -183,18 +186,18 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             0.6846f,  0.82061f,  12.123f,  1.4456f,  -11.658f,  -0.71293f,  15.743f,  1.0686f,  -49.781f,  -2.1164f,
         },
         .pid_height = {
-            .kp = 400.0f,
+            .kp = 200.0f,
             .ki = 0.15f,
             .kd = 20000.0f,
             .max_iout = 5.0f,
             .max_out = 20.0f,
         },
         .pid_psi = {
-            .kp = 3000.0f,
+            .kp = 200.0f,
             .ki = 0.05f,
-            .kd = 1600.0f,
-            .max_iout = 10.0f,
-            .max_out = 20.0f,
+            .kd = 5000.0f,
+            .max_iout = 30.0f,
+            .max_out = 60.0f,
         },
         .speed_observer = {
             .A = { 1.0f, 0.001f, 0.0f, 1.0f },
@@ -211,8 +214,6 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
 constexpr robo::bot::WheelLegInfo info {
     .input = gamepad,
     .wheel_leg = wheel_leg,
-    .forward_ratio = wheel_leg.limit.speed_set.max,
-    .turning_ratio = wheel_leg.limit.yaw_err_set.max,
 };
 
 ///////////////////////////////////////////

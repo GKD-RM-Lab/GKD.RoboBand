@@ -21,7 +21,6 @@ public:
         using dev_type = Gamepad;
 
         std::string_view name;
-        std::chrono::nanoseconds offline_timeout;
         spt::task_context::continuous::info context;
 
         [[nodiscard]]
@@ -42,7 +41,16 @@ private:
     std::function<void()> on_offline_ { nullptr };
     std::function<void()> on_update_ { nullptr };
 
-    std::array<float, 4> stick_ {};
+    struct {
+        std::array<float, 4> data {};
+    
+        float& left_x { data[0] };
+        float& left_y { data[1] };
+        float& right_x { data[2] };
+        float& right_y { data[3] };
+
+        float& operator[](std::size_t i) { return data[i]; }
+    } stick_ {};
 
     struct {
         std::array<float, 2> data {};
@@ -86,7 +94,7 @@ private:
 
 public: 
     explicit Gamepad(const Info& info) :
-        dev::Input { info.offline_timeout },
+        dev::Input { std::chrono::nanoseconds::max() },
         info_ { info } {
         task_context::add_task(info_.context, 1ms, [this] { task(); });
     }
@@ -105,9 +113,9 @@ public:
     auto& stick() const { return stick_; }
     auto& trigger() const { return trigger_; }
     auto& button() const { return button_; }
-    float vx() const { return -stick_[1]; }
-    float vy() const { return stick_[0]; }
-    float wz() const { return stick_[3]; }
+    float vx() const { return -stick_.left_y; }
+    float vy() const { return -stick_.left_x; }
+    float wz() const { return -stick_.right_x; }
 
 private:
     void open();
