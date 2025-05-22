@@ -25,8 +25,6 @@ private:
     In::dev_type input { Info::input };
     WL::ctrl_type wheel_leg { Info::wheel_leg };
 
-    bool emergency_stopped { false };
-
 public:
     explicit WheelLeg(const Info& info) : 
         Info { info } {
@@ -39,10 +37,7 @@ public:
         input.on_update([this] {
             wheel_leg.setSpeed(input.vx() * this->forward_ratio);
             if constexpr (std::same_as<In, input::Gamepad::Info>) {
-                if (input.button().bumper.left) {
-                    emergency_stopped = true;
-                }
-                if (input.button().bumper.right) {
+                if (input.button().bumper.left or input.button().bumper.right) {
                     float height_min = Info::wheel_leg.limit.height_set.min;
                     float height_max = Info::wheel_leg.limit.height_set.max;
                     float height_mid = Info::wheel_leg.limit.height_set.mid;
@@ -57,9 +52,11 @@ public:
                     wheel_leg.setRoll(input.trigger().right * this->roll_set_ratio - input.trigger().left * this->roll_set_ratio);
                 }
             }
-            if (emergency_stopped) {
+            if (input.button().action.A) {
+                wheel_leg.restart();
+            }
+            if (input.button().action.X) {
                 wheel_leg.emergencyStop();
-                return;
             }
         });
     }

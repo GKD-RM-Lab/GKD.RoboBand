@@ -20,7 +20,7 @@ public:
         b1,
     };
     enum class mode {
-        defalut           = 0,
+        locked           = 0,
         foc               = 1,
         encoder_calibrate = 2,
     };
@@ -144,4 +144,23 @@ private:
 };
 static_assert(dev::motor<Unitree::Info>);
 } // namespace robo::motor
+
+export template <>
+struct std::formatter<robo::motor::Unitree::state> : std::formatter<std::string_view> {
+    auto format(robo::motor::Unitree::state s, auto& ctx) const {
+        static constexpr std::array names = { 
+            "normal",
+            "over heat",
+            "over current",
+            "over voltage",
+            "encoder fault",
+            "bus under voltage",
+            "winding over heat",
+            "reserved"
+        };
+        return formatter<std::string_view>::format(
+            names[static_cast<std::size_t>(s)], ctx
+        );
+    }
+};
 
