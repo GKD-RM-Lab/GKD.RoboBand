@@ -81,8 +81,10 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
 
     .constant = {
         .f_gravity = 33.0f,
+        .wheel_mass = 0.1f,
         .wheel_radius = 0.10f,
         .wheel_spacing = 0.38f,
+        .leg_length_min = 0.15f,
     },
 
     .limit = {
@@ -151,6 +153,7 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             13.241f, 21.299f, -20.978f, -1.916f, -20.065f, -0.074397f, 25.931f, -6.6236f, -50.853f, -1.6233f,
             -13.597f, -19.423f, 34.116f, 3.522f, 16.804f, 0.17959f, 24.587f, 7.0771f, 94.481f, 3.346f,
         },
+
         .pid_height = {
             .kp = 250.0f,
             .ki = 0.05f,
@@ -170,7 +173,14 @@ constexpr robo::chassis::WheelLegInfo wheel_leg {
             .H = { 1.0f, 0.0f, 0.0f, 1.0f },
             .Q_c = { 20.0f * 1e-3f, 0.0f, 0.0f, 0.01f * 1e-3f },
             .R_c = { 1000.0f, 0.0f, 0.0f, 0.01f },
-        }
+        },
+
+        .cent_acc_filter_t = 100ms,
+        .wheel_height_acc_filter_t = 50ms,
+
+        .roll_compensation_ratio = 0.2f,
+        .off_ground_time = 150ms,
+        .off_ground_torque = 5.0f,
     },
 };
 

@@ -88,6 +88,16 @@ public:
     operator float() { return val; }
 };
 
+struct filter {
+    const float k;
+    float val {};
+    float update(const float v) { 
+        val += k * (v - val);
+        return val;
+    }
+    operator float() const { return val; }
+};
+
 template <std::size_t N>
 struct kalman {
 public:

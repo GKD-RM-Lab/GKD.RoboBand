@@ -134,6 +134,8 @@ private:
         speed_ = static_cast<float>(rx_data.speed_fbk) / 
             256.0f * 2.0f * std::numbers::pi_v<float> / 
             reduction_ratio * static_cast<float>(info_.dir);
+        speed_ = static_cast<float>(rx_data.torque_fbk) / 256.0f / 
+            reduction_ratio * static_cast<float>(info_.dir);
         state_ = rx_data.state;
         if (state_ != state::normal) {
             // TODO log

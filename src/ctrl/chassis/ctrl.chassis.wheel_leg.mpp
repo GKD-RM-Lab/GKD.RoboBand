@@ -68,8 +68,10 @@ struct WheelLegInfo {
 
     struct {
         float f_gravity;
+        float wheel_mass;
         float wheel_radius;
         float wheel_spacing;
+        float leg_length_min;
     } constant;
 
     struct {
@@ -108,9 +110,18 @@ struct WheelLegInfo {
         std::array<float, 40> K20;
         std::array<float, 40> K11;
         std::array<float, 40> K02;
+
         ctrl::pid::param pid_height;
         ctrl::pid::param pid_psi;
+
         ctrl::kalman<2>::param speed_observer;
+
+        std::chrono::nanoseconds cent_acc_filter_t;
+        std::chrono::nanoseconds wheel_height_acc_filter_t;
+
+        float roll_compensation_ratio;
+        std::chrono::nanoseconds off_ground_time;
+        float off_ground_torque;
     } param;
 };
 
@@ -148,13 +159,39 @@ private:
     ctrl::pid pid_height { this->param.pid_height };
     ctrl::pid pid_psi { this->param.pid_psi };
     ctrl::kalman<2> speed_observer { { 0.0f, 0.0f }, this->param.speed_observer };
+    ctrl::filter cent_acc { static_cast<float>(this->ctrl_period.count()) / static_cast<float>(this->param.cent_acc_filter_t.count()) };
+
+    struct wheel_height_acc_calc {
+        const float t_sample;
+        ctrl::filter val;
+        float v_last {};
+        void update(const float body_height_acc, const float v) {
+            val.update(body_height_acc - (v - v_last) / t_sample);
+            v_last = v;
+        }
+        operator float() const { return val; }
+        explicit wheel_height_acc_calc(const std::pair<float, float>& arg) :
+            t_sample { arg.first }, val { arg.second } {}
+    };
+    spt::pair<wheel_height_acc_calc> wheel_height_acc {
+        std::pair { 
+            std::chrono::duration_cast<std::chrono::duration<float>>(this->ctrl_period).count(), 
+            static_cast<float>(this->ctrl_period.count()) / static_cast<float>(this->param.wheel_height_acc_filter_t.count()) 
+        },
+        std::pair { 
+            std::chrono::duration_cast<std::chrono::duration<float>>(this->ctrl_period).count(), 
+            static_cast<float>(this->ctrl_period.count()) / static_cast<float>(this->param.wheel_height_acc_filter_t.count()) 
+        },
+    };
+
+    const unsigned off_ground_cnt_max { static_cast<unsigned>(this->param.off_ground_time / this->ctrl_period) };
+    spt::pair<unsigned> off_ground_cnt {};
+    spt::pair<bool> off_ground_flag { true, true };
 
 public:
-    Imu::dev_type  imu         { Info::imu };
-    Leg::ctrl_type leg_left    { Info::leg_left };
-    Leg::ctrl_type leg_right   { Info::leg_right };
-    M::dev_type    wheel_left  { Info::wheel_left };
-    M::dev_type    wheel_right { Info::wheel_right };
+    Imu::dev_type imu { Info::imu };
+    spt::pair<typename Leg::ctrl_type> leg { this->leg_left, this->leg_right };
+    spt::pair<typename M::dev_type> wheel { this->wheel_left, this->wheel_right };
 
 public:
     explicit WheelLeg(const Info& info) : 
@@ -180,24 +217,24 @@ public:
 
 #ifdef USE_WEBOTS
     void init() requires Info::use_webots {
-        while (dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2));
+        while (dev::is_offline(imu, wheel.left, wheel.right, leg.left.motor1, leg.left.motor2, leg.right.motor1, leg.right.motor2));
         phi_offset = imu.angle(imu::axis::yaw);
-        wheel_left.setAngle(0.0f);
-        wheel_right.setAngle(0.0f);
-        leg_left.motor1.setAngle(3.447f);
-        leg_left.motor2.setAngle(3.447f);
-        leg_right.motor1.setAngle(3.447f);
-        leg_right.motor2.setAngle(3.447f);
+        wheel.left.setAngle(0.0f);
+        wheel.right.setAngle(0.0f);
+        leg.left.motor1.setAngle(3.447f);
+        leg.left.motor2.setAngle(3.447f);
+        leg.right.motor1.setAngle(3.447f);
+        leg.right.motor2.setAngle(3.447f);
     }
     void init() requires (not Info::use_webots) {
 #else
     void init() {
 #endif
-        std::array<std::reference_wrapper<typename M::dev_type>, 4> motor { leg_left.motor1, leg_right.motor1, leg_left.motor2, leg_right.motor2 };
+        std::array<std::reference_wrapper<typename M::dev_type>, 4> motor { leg.left.motor1, leg.right.motor1, leg.left.motor2, leg.right.motor2 };
         auto t { std::chrono::steady_clock::now() };
         auto t_start = t;
         while (true) {
-            if (stopped or dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) {
+            if (stopped or dev::is_offline(imu, wheel.left, wheel.right, leg.left.motor1, leg.left.motor2, leg.right.motor1, leg.right.motor2)) {
                 setZeroTorque();
                 t_start = t;
             } else {
@@ -220,8 +257,8 @@ public:
                             m.get().setAngle(this->special.joint_limit_angle);
                         }
                         phi_offset = imu.angle(imu::axis::yaw);
-                        wheel_left.setAngle(0.0f);
-                        wheel_right.setAngle(0.0f);
+                        wheel.left.setAngle(0.0f);
+                        wheel.right.setAngle(0.0f);
                         break;
                     }
                 }
@@ -232,29 +269,29 @@ public:
     }
 
 private:
-    auto wheel_left_ground_angle() -> std::pair<float, float> {
+    auto wheel_left_ground_angle() -> std::array<float, 2> {
         return {
-            wheel_left.angle() + leg_left.wheel_angle_offset().first + imu.angle(imu::axis::pitch),
-            wheel_left.speed() + leg_left.wheel_angle_offset().second + imu.gyro(imu::axis::pitch),
+            wheel.left.angle() + leg.left.wheel_angle_offset()[0] + imu.angle(imu::axis::pitch),
+            wheel.left.speed() + leg.left.wheel_angle_offset()[1] + imu.gyro(imu::axis::pitch),
         };
     }
-    auto wheel_right_ground_angle() -> std::pair<float, float> {
+    auto wheel_right_ground_angle() -> std::array<float, 2> {
         return {
-            wheel_right.angle() + leg_right.wheel_angle_offset().first + imu.angle(imu::axis::pitch),
-            wheel_right.speed() + leg_right.wheel_angle_offset().second + imu.gyro(imu::axis::pitch),
+            wheel.right.angle() + leg.right.wheel_angle_offset()[0] + imu.angle(imu::axis::pitch),
+            wheel.right.speed() + leg.right.wheel_angle_offset()[1] + imu.gyro(imu::axis::pitch),
         };
     }
     float wheel_displacement_avg() {
-        return (wheel_left_ground_angle().first + wheel_right_ground_angle().first) * this->constant.wheel_radius / 2.0f;
+        return (wheel_left_ground_angle()[0] + wheel_right_ground_angle()[1]) * this->constant.wheel_radius / 2.0f;
     }
     float wheel_speed_avg() {
-        return (wheel_left_ground_angle().second + wheel_right_ground_angle().second) * this->constant.wheel_radius / 2.0f;
+        return (wheel_left_ground_angle()[1] + wheel_right_ground_angle()[1]) * this->constant.wheel_radius / 2.0f;
     }
 
     void setTorque(float wl, float wr, float ll1, float ll2, float lr1, float lr2) {
-        wheel_left.setTorque(wl);
-        leg_left.motor1.setTorque(ll1);
-        leg_right.motor1.setTorque(lr1);
+        wheel.left.setTorque(wl);
+        leg.left.motor1.setTorque(ll1);
+        leg.right.motor1.setTorque(lr1);
 #ifdef USE_WEBOTS
         if constexpr (not Info::use_webots) {
 #endif
@@ -262,9 +299,9 @@ private:
 #ifdef USE_WEBOTS
         }
 #endif
-        wheel_right.setTorque(wr);
-        leg_left.motor2.setTorque(ll2);
-        leg_right.motor2.setTorque(lr2);
+        wheel.right.setTorque(wr);
+        leg.left.motor2.setTorque(ll2);
+        leg.right.motor2.setTorque(lr2);
     }
     void setZeroTorque() {
         setTorque(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -272,30 +309,33 @@ private:
 
     void ctrl_loop() {
         if (not started_) return;
-        if (stopped or dev::is_offline(imu, wheel_left, wheel_right, leg_left.motor1, leg_left.motor2, leg_right.motor1, leg_right.motor2)) {
+        if (stopped or dev::is_offline(imu, wheel.left, wheel.right, leg.left.motor1, leg.left.motor2, leg.right.motor1, leg.right.motor2)) {
             setZeroTorque();
             return;
         }
    
         // state update
-        leg_left.update();
-        leg_right.update();
+        leg.left.update();
+        leg.right.update();
+
+        float l_l = leg.left.length()[0];
+        float l_r = leg.right.length()[0];
     
         float theta_b = imu.angle(imu::axis::pitch);
         float dot_theta_b = imu.gyro(imu::axis::pitch);
-        float theta_l_1 = leg_left.angle().first + theta_b;
-        float theta_l_2 = leg_right.angle().first + theta_b;
-        float dot_theta_l_1 = leg_left.angle().second + dot_theta_b;
-        float dot_theta_l_2 = leg_right.angle().second + dot_theta_b;
+        float theta_l_1 = leg.left.angle()[0] + theta_b;
+        float theta_l_2 = leg.right.angle()[0] + theta_b;
+        float dot_theta_l_1 = leg.left.angle()[1] + dot_theta_b;
+        float dot_theta_l_2 = leg.right.angle()[1] + dot_theta_b;
 
         float dot_s = wheel_speed_avg();
-        float dot_s_leg = (leg_left.length().second  * std::sin(theta_l_1) + leg_left.length().first  * dot_theta_l_1 * std::cos(theta_l_1) +
-                           leg_right.length().second * std::sin(theta_l_2) + leg_right.length().first * dot_theta_l_2 * std::cos(theta_l_2)) / 2.0f;
+        float dot_s_leg = (leg.left.length()[1]  * std::sin(theta_l_1) + l_l * dot_theta_l_1 * std::cos(theta_l_1) +
+                           leg.right.length()[1] * std::sin(theta_l_2) + l_r * dot_theta_l_2 * std::cos(theta_l_2)) / 2.0f;
         auto [speed, _] = speed_observer(dot_s + dot_s_leg, imu.acc(imu::axis::x));
         dot_s = speed - dot_s_leg;
 
         float s = wheel_displacement_avg();
-        float s_leg = (leg_left.length().first * std::sin(theta_l_1) + leg_right.length().first * std::sin(theta_l_2)) / 2.0f;
+        float s_leg = (l_l * std::sin(theta_l_1) + l_r * std::sin(theta_l_2)) / 2.0f;
         float displacement = s + s_leg;
         if (std::abs(speed_set) > this->limit.speed_set.dead_zone or std::abs(speed) > this->limit.speed_set.stop) {
             displacement_offset = displacement;
@@ -314,9 +354,52 @@ private:
         math::abs_limit(theta_l_2, this->limit.theta_l_ref_max);
         math::abs_limit(theta_b, this->limit.theta_b_ref_max);
 
+        cent_acc.update(speed * imu.gyro(imu::axis::yaw) - cent_acc);
+
+        float acc_world_z = [&, this] {
+            Eigen::Vector<float, 3> acc_body { imu.acc(imu::axis::x), imu.acc(imu::axis::y), imu.acc(imu::axis::z) };
+            float cx = std::cos(imu.angle(imu::axis::x));
+            float sx = std::sin(imu.angle(imu::axis::x));
+            float cy = std::cos(imu.angle(imu::axis::y));
+            float sy = std::sin(imu.angle(imu::axis::y));
+            float cz = std::cos(imu.angle(imu::axis::z));
+            float sz = std::sin(imu.angle(imu::axis::z));
+            float R02 = cx * sy * cz + sx * sz;
+            float R12 = cx * sy * sz - sx * cz;
+            float R22 = cx * cy;
+            return acc_body.x() * R02 + acc_body.y() * R12 + acc_body.z() * R22;
+        }();
+        wheel_height_acc.left.update(acc_world_z - 9.8f, leg.left.length()[1] * std::cos(leg.left.angle()[0]) - leg.left.length()[0] * leg.left.angle()[1] * std::sin(leg.left.angle()[0]));
+        wheel_height_acc.right.update(acc_world_z - 9.8f, leg.right.length()[1] * std::cos(leg.right.angle()[0]) - leg.right.length()[0] * leg.right.angle()[1] * std::sin(leg.right.angle()[0]));
+
+        spt::pair<float> f_n_wheel;
+        f_n_wheel.left = leg.left.force().first * std::cos(leg.left.angle()[0]) + leg.left.force().second / leg.left.length()[0] * std::sin(leg.left.angle()[0]) + this->constant.wheel_mass * (9.8f + wheel_height_acc.left);
+        f_n_wheel.right = leg.right.force().first * std::cos(leg.right.angle()[0]) + leg.right.force().second / leg.right.length()[0] * std::sin(leg.right.angle()[0]) + this->constant.wheel_mass * (9.8f + wheel_height_acc.right);
+
+        if ((off_ground_flag.left xor (f_n_wheel.left < this->param.off_ground_torque)) or (off_ground_flag.left and leg.left.length()[0] < this->constant.leg_length_min)) {
+            off_ground_cnt.left++;
+        } else {
+            off_ground_cnt.left = 0;
+        }
+        if ((off_ground_flag.right xor (f_n_wheel.right < this->param.off_ground_torque)) or (off_ground_flag.right and leg.right.length()[0] < this->constant.leg_length_min)) {
+            off_ground_cnt.right++;
+        } else {
+            off_ground_cnt.right = 0;
+        }
+        if (off_ground_cnt.left > off_ground_cnt_max) {
+            off_ground_flag.left = not off_ground_flag.left;
+            off_ground_cnt.left = 0;
+        }
+        if (off_ground_cnt.right > off_ground_cnt_max) {
+            off_ground_flag.right = not off_ground_flag.right;
+            off_ground_cnt.right = 0;
+        } 
+        if (off_ground_flag.left and off_ground_flag.right) { 
+            setZeroTorque();
+            return;
+        }
+
         // control
-        float l_l = leg_left.length().first;
-        float l_r = leg_right.length().first;
         auto K = K00 + K10 * l_l + K01 * l_r + K20 * (l_l * l_l) + K11 * (l_l * l_r) + K02 * (l_r * l_r);
         
         Eigen::Vector<float, 10> state_ref { 
@@ -332,7 +415,7 @@ private:
         Eigen::Vector<float, 10> state_err = state_set - state_ref;
 
         float roll_set_final = math::abs_limited(((std::abs(roll_set) < this->limit.roll_set.dead_zone) ? 0.0f : roll_set) - 
-                                                 std::atan2(imu.gyro(imu::axis::yaw) * speed, 9.8f), this->limit.roll_set.max);
+                                                 this->param.roll_compensation_ratio * std::atan2(cent_acc, 9.8f), this->limit.roll_set.max);
         float f_psi = pid_psi(roll_set_final, imu.angle(imu::axis::roll));
 
         float height_set_final = std::clamp(height_set - std::tan(std::abs(imu.angle(imu::axis::roll))) * 
@@ -342,7 +425,7 @@ private:
 
         float f_inertial = (this->constant.f_gravity / 9.8f) *
                            (((l_l + l_r) / 2.0f + this->constant.wheel_radius) / this->constant.wheel_spacing) * 
-                           speed * imu.gyro(imu::axis::yaw);
+                           cent_acc;
         Eigen::Vector<float, 4> f_ctrl { f_psi, f_l, this->constant.f_gravity, f_inertial };
         Eigen::Vector<float, 2> f_n = trans * f_ctrl;
 
@@ -351,17 +434,20 @@ private:
             torque_over_limit = false;
 
             Eigen::Vector<float, 4> ctrl_vec = K * state_err;
+            if (off_ground_flag.left) ctrl_vec(0) = 0.0f;
+            if (off_ground_flag.right) ctrl_vec(1) = 0.0f;
+
             float f1_l {}, f2_l {}, f1_r {}, f2_r {};
-            std::tie(f1_l, f2_l) = leg_left.calcForce(f_n(0), ctrl_vec(2));
-            std::tie(f1_r, f2_r) = leg_right.calcForce(f_n(1), ctrl_vec(3));
+            std::tie(f1_l, f2_l) = leg.left.calcForce(f_n(0), ctrl_vec(2));
+            std::tie(f1_r, f2_r) = leg.right.calcForce(f_n(1), ctrl_vec(3));
 
             std::array ratio {
-                std::abs(ctrl_vec(0)) / wheel_left.torque_max(),
-                std::abs(ctrl_vec(1)) / wheel_right.torque_max(),
-                std::abs(f1_l) / leg_left.motor1.torque_max(),
-                std::abs(f2_l) / leg_left.motor2.torque_max(),
-                std::abs(f1_r) / leg_right.motor1.torque_max(),
-                std::abs(f2_r) / leg_right.motor2.torque_max(),
+                std::abs(ctrl_vec(0)) / wheel.left.torque_max(),
+                std::abs(ctrl_vec(1)) / wheel.right.torque_max(),
+                std::abs(f1_l) / leg.left.motor1.torque_max(),
+                std::abs(f2_l) / leg.left.motor2.torque_max(),
+                std::abs(f1_r) / leg.right.motor1.torque_max(),
+                std::abs(f2_r) / leg.right.motor2.torque_max(),
             };
             if (stdr::max(ratio) > 1.0f) {
                 torque_over_limit = true;

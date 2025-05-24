@@ -35,6 +35,18 @@ struct not_copyable_base {
     not_copyable_base& operator=(const not_copyable_base&) = delete;
 };
 
+template <typename T, typename U = T>
+struct pair {
+    std::pair<T, U> p;
+    T& first { p.first };
+    T& left { p.first };
+    U& second { p.second };
+    U& right { p.second };
+    explicit pair(auto&&... args) : p { std::forward<decltype(args)>(args)... } {}
+    pair() = default;
+    operator std::pair<T, U>& () { return p; }
+};
+
 namespace byte_literals {
 consteval std::byte operator"" _b(unsigned long long int byte) {
     if (byte > 0xff) throw std::out_of_range{ "std::byte literal exceeds 0xff." };

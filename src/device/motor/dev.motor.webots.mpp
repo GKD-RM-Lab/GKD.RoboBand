@@ -53,6 +53,7 @@ public:
     }
     void setTorque(float torque) {
         spt::webots(wb_motor_set_torque, motor_tag_, static_cast<double>(info_.dir) * static_cast<double>(math::abs_limited(torque, torque_max_)));
+        torque_ = torque;
     }
     void setAngleOffset(float offset) {
         angle_offset_ = offset;

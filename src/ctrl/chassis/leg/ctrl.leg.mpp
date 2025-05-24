@@ -9,9 +9,10 @@ concept leg =
     requires (T::ctrl_type t) {
         { t.update() } -> std::same_as<void>;
         { t.setForce(std::declval<float>(), std::declval<float>()) } -> std::same_as<void>;
-        { t.length() } -> std::same_as<std::pair<float, float>>;
-        { t.angle() } -> std::same_as<std::pair<float, float>>;
-        { t.wheel_angle_offset() } -> std::same_as<std::pair<float, float>>;
+        { t.length() } -> std::same_as<std::array<float, 2>>;
+        { t.angle() } -> std::same_as<std::array<float, 2>>;
+        { t.wheel_angle_offset() } -> std::same_as<std::array<float, 2>>;
+        { t.force() } -> std::same_as<std::pair<float, float>>;
     };
 } // namespace robo::ctrl
 

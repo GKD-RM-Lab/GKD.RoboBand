@@ -7,6 +7,7 @@ export module robo:ctrl.leg.five_bar;
 import std;
 import :spt;
 import :dev.motor;
+import :ctrl.basic;
 
 export namespace robo::ctrl {
 template <dev::motor M1, dev::motor M2>
@@ -55,10 +56,14 @@ public:
     float dot_theta_l {};
     std::pair<float, float> motor_angle_offset {};
 
+    float f_n_fbk {};
+    float tau_j_fbk {};
+
     Eigen::Matrix<float, 2, 2> jacobian_trans;
 
 public:
-    explicit FiveBar(const FiveBarInfo<M1, M2>& info) : info_ { info } {
+    explicit FiveBar(const FiveBarInfo<M1, M2>& info) : 
+        info_ { info } {
         if (info_.wheel_fixed_side != 1 and info_.wheel_fixed_side != 2) {
             throw std::logic_error{ 
                 std::format("FiveBarInfo::wheel_fixed_side must be 1 or 2, but you gave {}", info_.wheel_fixed_side)
@@ -66,14 +71,20 @@ public:
         }
     }
 
-    auto length() const -> std::pair<float, float> { return { l, dot_l }; }
-    auto angle() const -> std::pair<float, float> { 
+    auto length() const -> std::array<float, 2> { 
+        return { l, dot_l };
+    }
+    auto angle() const -> std::array<float, 2> { 
         float dir = info_.forward_installation ? 1.0f : -1.0f;
         return { dir * theta_l, dir * dot_theta_l }; 
     }
-    auto wheel_angle_offset() const -> std::pair<float, float> { 
+    auto wheel_angle_offset() const -> std::array<float, 2> { 
         float dir = (info_.forward_installation xor (info_.wheel_fixed_side == 1 ? true : false)) ? -1.0f : 1.0f;
         return { dir * motor_angle_offset.first, dir * motor_angle_offset.second };
+    }
+    auto force() const -> std::pair<float, float> { 
+        float dir = info_.forward_installation ? 1.0f : -1.0f;
+        return { f_n_fbk, dir * tau_j_fbk };
     }
 
     void update() {
@@ -130,6 +141,15 @@ public:
                 (l_c * std::sin(varphi_B_1 + varphi_B_2))
             };
         }
+
+        // update force feedback
+        Eigen::Vector<float, 2> force_actual;
+        Eigen::Vector<float, 2> force_virtual;
+
+        force_actual << motor1.torque(), motor2.torque();
+        force_virtual = jacobian_trans.transpose().inverse() * force_actual;
+        f_n_fbk = force_virtual(0);
+        tau_j_fbk = force_virtual(1);
     }
 
     auto calcForce(const float f_n, const float tau_j) -> std::pair<float, float> {
