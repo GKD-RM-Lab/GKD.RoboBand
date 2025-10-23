@@ -77,3 +77,4 @@ docs
 .gdb_history
 compile_commands.json
 
+.idea

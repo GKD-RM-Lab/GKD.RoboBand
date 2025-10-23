@@ -10,10 +10,12 @@ add_requires("eigen")
 
 set_toolchains("llvm")
 set_runtimes("c++_shared")
-set_languages("cxx26")
+set_languages("cxx23")
 set_policy("build.warning", true)
 set_warnings("allextra", "pedantic")
 add_cxxflags("-fexperimental-library")
+add_cxxflags("-stdlib=libc++")
+add_cxxflags("")
     
 if is_mode("debug") then
     add_cxxflags("-ftrapv")
@@ -65,19 +67,6 @@ target("src") do
     end
 end
 
-target("test") do
-    set_default(false)
-    set_kind("binary")
-    add_deps("src")
-    add_files("app/test.cc")
-end
-
-target("wheel_leg.real") do
-    set_default(false)
-    set_kind("binary")
-    add_deps("src")
-    add_files("app/wheel_leg/real.cc")
-end
 if has_config("use_webots") then
     target("wheel_leg.webots") do
         set_default(false)
